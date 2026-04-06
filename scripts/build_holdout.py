@@ -1,4 +1,4 @@
-"""Reproducibly build holdout_v7.jsonl — the fresh 200-record evaluation set.
+"""Reproducibly build holdout.jsonl — the fresh 200-record evaluation set.
 
 Exclusions:
 - All source_hashes in old holdout_set.jsonl (v5/v6 evaluation set)
@@ -18,7 +18,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "benchmark"
 
 # Explicit set of source_hashes used as contrastive examples in v6/v7 prompts
@@ -136,7 +136,7 @@ def main(seed: int = 42, n_correct: int = 100, n_incorrect: int = 100):
         print(f"  {t}: {c}")
 
     # Write
-    out = DATA / "holdout_v7.jsonl"
+    out = DATA / "holdout.jsonl"
     with open(out, "w") as f:
         for r in sample:
             f.write(json.dumps(r) + "\n")

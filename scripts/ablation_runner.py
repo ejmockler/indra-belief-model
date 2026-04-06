@@ -17,14 +17,14 @@ import json
 import random
 from pathlib import Path
 
-from experiments.belief_benchmark.model_client import (
+from indra_belief.model_client import (
     ModelClient, extract_verdict, verdict_to_score,
 )
-from experiments.belief_benchmark.llm_scorer_v5 import (
+from indra_belief.llm_scorer_v5 import (
     CONTRASTIVE_EXAMPLES_V5, SYSTEM_PROMPT_V5, compute_grounding, render_example,
 )
 
-BENCHMARK_DIR = Path(__file__).resolve().parents[2] / "data" / "benchmark"
+BENCHMARK_DIR = Path(__file__).resolve().parents[1] / "data" / "benchmark"
 
 
 SYSTEM_PROMPT_NO_GROUNDING = """\

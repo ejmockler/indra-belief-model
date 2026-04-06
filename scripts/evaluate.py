@@ -7,7 +7,7 @@ Metrics:
   - Per-source accuracy: breakdown by extraction system
 
 Usage:
-    python -m experiments.belief_benchmark.evaluate
+    python scripts/evaluate.py
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from experiments.belief_benchmark.scorers import (
+from indra_belief.scorers import (
     BeliefScorer,
     INDRABeliefScorer,
     INDRASimpleScorer,
@@ -27,7 +27,7 @@ from experiments.belief_benchmark.scorers import (
     score_dataset,
 )
 
-OUTPUT_DIR = Path(__file__).resolve().parents[2] / "data" / "benchmark" / "results"
+OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data" / "results"
 
 
 def compute_auprc(y_true: np.ndarray, y_score: np.ndarray) -> float:

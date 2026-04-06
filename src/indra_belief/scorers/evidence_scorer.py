@@ -7,7 +7,7 @@ Changes from v7:
 - Improved alias filter (lowercase p-prefix, cap raised to 6)
 
 Run:
-    .venv/bin/python experiments/belief_benchmark/llm_scorer_v8.py
+    python -m indra_belief.scorers.evidence_scorer
 """
 from __future__ import annotations
 
@@ -17,18 +17,16 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure project root is importable
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[3]
 
-from experiments.belief_benchmark.claim_enricher import (
+from indra_belief.data.claim_enricher import (
     build_corpus_index_v8,
     enrich_claim,
     format_entity_context,
     get_extraction_context,
     get_evidence_directness,
 )
-from experiments.belief_benchmark.model_client import ModelClient
+from indra_belief.model_client import ModelClient
 
 
 # ---------------------------------------------------------------------------
@@ -336,8 +334,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="v8 LLM scorer — extraction context layer")
     parser.add_argument("--model", default="gemma-moe", help="Model name (default: gemma-moe)")
-    parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout_v7.jsonl"))
-    parser.add_argument("--output", default=str(ROOT / "data" / "benchmark" / "results" / "v8_holdout.jsonl"))
+    parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
+    parser.add_argument("--output", default=str(ROOT / "data" / "results" / "v8.jsonl"))
     parser.add_argument("--max-tokens", type=int, default=4000)
     parser.add_argument("--limit", type=int, default=None, help="Limit records for testing")
     args = parser.parse_args()

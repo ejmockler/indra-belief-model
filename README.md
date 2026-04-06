@@ -6,7 +6,7 @@ Given an INDRA Statement (e.g., `AURKB [Phosphorylation] ATXN10`) and the eviden
 
 ## Results
 
-Evaluated on a 200-record held-out benchmark from [Gyori et al. 2023](https://doi.org/10.5281/zenodo.7559353) (INDRA belief scoring dataset).
+Evaluated on a 200-record held-out benchmark from [Gyori et al. 2023](https://doi.org/10.5281/zenodo.7559353) (INDRA assembly Benchmark Corpus).
 
 | Version | Accuracy | Architecture | Notes |
 |---------|----------|-------------|-------|
@@ -111,6 +111,6 @@ data/
 
 ## References
 
-- Gyori et al. (2023). "Improving the precision of INDRA's belief scoring model." [Zenodo 7559353](https://doi.org/10.5281/zenodo.7559353)
+- Gyori et al. (2023). "Automated assembly of molecular mechanisms at scale from text mining and curated databases." *Molecular Systems Biology*, e11325. [Benchmark corpus: Zenodo 7559353](https://doi.org/10.5281/zenodo.7559353)
 - [Gilda](https://github.com/gyorilab/gilda) — Biomedical entity grounding
 - [INDRA](https://github.com/gyorilab/indra) — Integrated Network and Dynamical Reasoning Assembler

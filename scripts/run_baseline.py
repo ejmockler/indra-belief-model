@@ -14,18 +14,17 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "experiments" / "belief_benchmark"))
 
-from cliquefinder.stats.evidence_scorer import (
+from indra_belief.scorers.evidence_scorer import (
     CONTRASTIVE_EXAMPLES,
     SYSTEM_PROMPT,
     _render_example,
     _extract_verdict,
     _verdict_to_score,
 )
-from model_client import ModelClient
+from indra_belief.model_client import ModelClient
 
 
 def score_record(client, subject, stmt_type, obj, evidence_text, max_tokens=4000):
@@ -65,8 +64,8 @@ def score_record(client, subject, stmt_type, obj, evidence_text, max_tokens=4000
 
 
 def main():
-    holdout_path = ROOT / "data" / "benchmark" / "holdout_v7.jsonl"
-    output_path = ROOT / "data" / "benchmark" / "results" / "v5_baseline_on_v7_holdout.jsonl"
+    holdout_path = ROOT / "data" / "benchmark" / "holdout.jsonl"
+    output_path = ROOT / "data" / "results" / "v5_baseline.jsonl"
 
     with open(holdout_path) as f:
         holdout = [json.loads(line) for line in f]

@@ -7,7 +7,7 @@ Changes from v8:
 - Combines text comprehension (v8 rules) + grounding verification (tool use)
 
 Run:
-    .venv/bin/python experiments/belief_benchmark/llm_scorer_v9.py
+    python -m indra_belief.scorers.agentic_scorer
 """
 from __future__ import annotations
 
@@ -17,26 +17,23 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure project root is importable
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[3]
 
-from experiments.belief_benchmark.claim_enricher import (
+from indra_belief.data.claim_enricher import (
     build_corpus_index_v8,
     enrich_claim,
     format_entity_context,
     get_evidence_directness,
 )
-from experiments.belief_benchmark.model_client import ModelClient, ModelResponse
-from experiments.belief_benchmark.gilda_tools import TOOLS, TOOL_DECLARATIONS
+from indra_belief.model_client import ModelClient, ModelResponse
+from indra_belief.tools.gilda_tools import TOOLS, TOOL_DECLARATIONS
 
 
 # ---------------------------------------------------------------------------
-# System prompt — teaches the three layers
+# System prompt — Pass 1 uses exact v8 prompt (no tool instructions)
 # ---------------------------------------------------------------------------
 
-# Pass 1 uses exact v8 system prompt for text comprehension (no tool instructions)
-from experiments.belief_benchmark.llm_scorer_v8 import SYSTEM_PROMPT
+from indra_belief.scorers.evidence_scorer import SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------------------
@@ -406,8 +403,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="v9 LLM scorer — agentic grounding verification")
     parser.add_argument("--model", default="gemma-moe", help="Model name (default: gemma-moe)")
-    parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout_v7.jsonl"))
-    parser.add_argument("--output", default=str(ROOT / "data" / "benchmark" / "results" / "v9_holdout.jsonl"))
+    parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
+    parser.add_argument("--output", default=str(ROOT / "data" / "results" / "v9.jsonl"))
     parser.add_argument("--max-tokens", type=int, default=4000)
     parser.add_argument("--limit", type=int, default=None, help="Limit records for testing")
     args = parser.parse_args()

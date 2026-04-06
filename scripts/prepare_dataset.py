@@ -30,7 +30,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_DIR = ROOT / "data" / "benchmark"
 CORPUS_PATH = BENCHMARK_DIR / "indra_benchmark_corpus.json.gz"
 CURATIONS_PATH = BENCHMARK_DIR / "indra_assembly_curations.json"

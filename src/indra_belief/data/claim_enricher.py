@@ -12,7 +12,7 @@ Two capabilities:
 
 Usage as a module::
 
-    from experiments.belief_benchmark.claim_enricher import (
+    from indra_belief.data.claim_enricher import (
         build_corpus_index,
         enrich_claim,
         format_entity_context,
@@ -34,7 +34,7 @@ from typing import Any
 # Constants
 # ---------------------------------------------------------------------------
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CORPUS = ROOT / "data" / "benchmark" / "indra_benchmark_corpus.json.gz"
 
 # Modification statement types that can carry residue/position
