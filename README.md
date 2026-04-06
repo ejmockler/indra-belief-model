@@ -106,15 +106,25 @@ The tool returns enriched descriptions with functional annotations, pseudogene t
 
 ## Error profile
 
-30 remaining errors on v8 (200-record holdout):
+30 remaining errors on v8 (200-record holdout). 16 of these are **stable** — all four scorer versions (v5, v7, v8, v9) agree on the wrong answer.
 
 | Category | Count | Root cause | Path forward |
 |----------|-------|-----------|-------------|
-| **Grounding** | 8 FP | INDRA mapped ambiguous entity names to wrong genes (9G8→SLU7 should be SRSF7) | Frontier model for tool-based disambiguation |
-| **Discourse** | 6 FP | Complex sentence structure: negative results, construct names, partial negation | More contrastive examples (diminishing returns) |
-| **Hedging/indirect** | 8 FN | LLM rejects correct extractions with hedging language the benchmark accepts | Calibration gap between prompt rules and curator standard |
-| **Biological inference** | 3 FN | Multi-step reasoning: Aβ is a fragment of APP, direction inversion | Domain knowledge beyond text |
-| **Benchmark noise** | 5 | LLM is arguably more correct than the ground truth label | Unfixable |
+| **Grounding** | 8 FP | INDRA mapped ambiguous entity names to wrong genes (9G8→SLU7 should be SRSF7, CagA→S100A8 is cross-species, TFs→TCEA1 is too generic) | Frontier model for tool-based disambiguation |
+| **Discourse** | 6 FP | Complex sentence structure: negative results ("kinase-dead mutant unable to"), construct names ("Myc-EGFR"), MD simulations, partial negation | More contrastive examples (diminishing returns) |
+| **Hedging/indirect** | 4 FN | LLM rejects correct extractions with hedging language the benchmark accepts ("we asked whether", "may partially retain") | Calibration gap between prompt rules and curator standard |
+| **Extraction provenance** | 4 FN | Evidence-level `raw_text` reveals the NLP reader extracted different entities than the Statement claims — direction swapped (Cyclin↔E2F1), wrong target in chain (HRG→HER4 not ERBB2→HRG), multi-step indirect inference (RPS6KB1→...→PI3K) | The LLM correctly rejects; these are benchmark labels that accept Statement-level truth over evidence-level truth |
+| **Causal direction** | 2 FP | MITF "potentiates the effect of BRAF V600E" — curator notes MITF is downstream of BRAF, so the Activation direction is reversed | Teach direction-of-causation reasoning |
+| **Entity specificity** | 3 FP | Family names (NFkappaB, STAT) used where text names specific members (p50, Stat 5B) | Family specificity warnings already in prompt but not caught |
+| **Cross-species/ortholog** | 1 FP | Sir2 (yeast) → SIRT1 (human) mapping — debatable whether this is an error | Domain convention |
+
+### A note on "benchmark noise"
+
+Of the 16 stable disagreements, **the benchmark is right in 11 cases** — these are genuine extraction errors the LLM fails to catch (grounding mismatches, construct names, simulations, reversed directions). The LLM accepts them because the evidence text superficially supports the claimed relationship.
+
+In **4 cases, the LLM is right and the benchmark label is questionable** — the evidence sentence doesn't actually support the Statement when read carefully (explicitly stated uncertainty, subject/object swap, multi-step indirect chain). These represent a gap between Statement-level correctness (the biological relationship exists) and evidence-level correctness (this specific sentence supports it).
+
+**1 case is genuinely debatable** (Sir2→SIRT1 cross-species ortholog mapping).
 
 ## Setup
 
