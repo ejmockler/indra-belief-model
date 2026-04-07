@@ -37,10 +37,8 @@ The scorer calls any OpenAI-compatible API endpoint. Models are configured in `m
 
 ```python
 LOCAL_MODELS = {
-    "gemma-moe": {
-        "base_url": "http://localhost:8085/v1",
-        "model_id": "mlx-community/gemma-4-26b-a4b-it-8bit",
-    },
+    "gemma-moe": {..., "base_url": "http://localhost:8085/v1"},   # Local MLX
+    "gemma-remote": {..., "base_url": "http://host:11434/v1"},    # Remote Ollama
     # Add any vLLM/mlx-lm/ollama endpoint here
 }
 ```
@@ -51,14 +49,16 @@ It also supports Anthropic models natively (`ModelClient("claude-sonnet-4-6")`).
 
 Evaluated on a 200-record held-out set from the [INDRA assembly Benchmark Corpus](https://doi.org/10.5281/zenodo.7559353) (Gyori et al. 2023). Holdout is balanced (100 correct, 100 incorrect extractions) with tags proportional to natural error frequency.
 
-| Version | Accuracy | AUPRC | Architecture |
-|---------|----------|-------|-------------|
-| v5 baseline | 80.2% | 0.804 | 8 contrastive examples |
-| v7 | 84.9% | 0.851 | + hedging scope rules, alias filter, new examples |
-| **v8** | **85.4%** | **0.833** | + epistemics.direct marker, softened Rule 3 |
-| v9 | 84.9% | 0.817 | + two-pass agentic tool use (gilda) |
+| Version | Accuracy | Architecture |
+|---------|----------|-------------|
+| v5 baseline | 80.2% | 8 contrastive examples |
+| v8 | 85.4% | + hedging scope rules, alias filter, epistemics.direct |
+| v10 | 85.9% | + deterministic gilda grounding verification (Tier 1) |
+| **v11** | **90.0%** | + gilda confidence threshold, pseudogene detection, structured provenance |
 
-All versions evaluated on the same 200 records with paired McNemar tests. Model: gemma-4-26b-a4b MoE (local, 8-bit quantized). AUPRC is limited by the discrete 7-value score grid.
+All versions evaluated on the same 200 records with paired McNemar tests. Model: gemma-4-26b-a4b MoE (local, 8-bit quantized).
+
+A large-scale evaluation on 4,647 records (half-corpus) is in progress to measure generalization beyond the 200-record holdout.
 
 ## How it works
 
@@ -86,45 +86,50 @@ Before prompting, claims are enriched with INDRA Statement metadata:
 - **Entity aliases**: Gilda resolves canonical names + synonyms (e.g., ARHGEF12 → aliases: LARG, KIAA0382)
 - **Family warnings**: "STAT (family — if text names a specific member, the claim should use that member)"
 
-### Agentic grounding verification (v9, experimental)
+### Deterministic grounding verification (v10–v11)
 
-A two-pass architecture where the LLM can call `lookup_gene()` to verify entity mappings:
+Before the LLM scores, a deterministic tier compares what the NLP reader extracted (`raw_text`) against the claim entities using [gilda](https://github.com/gyorilab/gilda):
+
+| Status | Action | Example |
+|--------|--------|---------|
+| **MISMATCH** | Auto-reject (no LLM call) | "RhoA" → RHOA ≠ ARHGEF25 |
+| **LOW_CONFIDENCE** | Auto-reject (gilda score ≤ 0.53) | "CagA" → S100A8 (0.521, cross-species bacterial protein) |
+| **PSEUDOGENE** | Auto-reject | "DVL" → DVL1P1 (pseudogene, not functional protein) |
+| **AMBIGUOUS** | LLM judges with grounding context | "9G8" → SRSF7 (0.556) = SLU7 (0.556), tied |
+| **MATCH** | Pass to LLM text comprehension | "FAK" → PTK2 (1.0, confirmed alias) |
+
+The corpus index handles source_hash collisions — multiple INDRA statements can share one evidence sentence. `lookup_evidence_meta()` finds the matching entry by statement entities, preventing wrong `raw_text` from reaching the scorer.
+
+### Structured provenance (v11)
+
+When the grounding check finds a MISMATCH, structured provenance is shown to the LLM:
 
 ```
-Pass 1: Text comprehension (v8 prompt + few-shot examples)
-         → verdict: "correct"
-
-Pass 2: If extraction provenance shows mismatch AND pass 1 accepted:
-         → LLM calls lookup_gene("RhoA")
-         → Tool returns: "RHOA — Ras Homolog Family Member A"
-         → LLM sees RHOA ≠ ARHGEF25 → overrides to "incorrect"
+Extraction provenance:
+  Subject: NLP extracted "IAPP" → IAPP (exact match)
+  Object: NLP extracted "amyloid" → mapped to IAPP (MISMATCH — "amyloid" is a DIFFERENT entity, gilda: 0.76)
+  Reader: sparser, pattern: BIO-FORM
 ```
 
-The tool returns enriched descriptions with functional annotations, pseudogene tags, and alias provenance — domain knowledge the LLM lacks parametrically.
-
-**Current limitation**: On a 26B model, pass 2 confirms rather than challenges pass 1's verdict. The architecture is validated but needs a frontier model to leverage tool results for disambiguation.
+Provenance triggers on ~7% of records (targeted to avoid the attention-dilution regressions observed when extraction context was shown broadly).
 
 ## Error profile
 
-30 remaining errors on v8 (200-record holdout). 16 of these are **stable** — all four scorer versions (v5, v7, v8, v9) agree on the wrong answer.
+### 200-record holdout (v11)
 
-| Category | Count | Root cause | Path forward |
-|----------|-------|-----------|-------------|
-| **Grounding** | 8 FP | INDRA mapped ambiguous entity names to wrong genes (9G8→SLU7 should be SRSF7, CagA→S100A8 is cross-species, TFs→TCEA1 is too generic) | Frontier model for tool-based disambiguation |
-| **Discourse** | 6 FP | Complex sentence structure: negative results ("kinase-dead mutant unable to"), construct names ("Myc-EGFR"), MD simulations, partial negation | More contrastive examples (diminishing returns) |
-| **Hedging/indirect** | 4 FN | LLM rejects correct extractions with hedging language the benchmark accepts ("we asked whether", "may partially retain") | Calibration gap between prompt rules and curator standard |
-| **Extraction provenance** | 4 FN | Evidence-level `raw_text` reveals the NLP reader extracted different entities than the Statement claims — direction swapped (Cyclin↔E2F1), wrong target in chain (HRG→HER4 not ERBB2→HRG), multi-step indirect inference (RPS6KB1→...→PI3K) | The LLM correctly rejects; these are benchmark labels that accept Statement-level truth over evidence-level truth |
-| **Causal direction** | 2 FP | MITF "potentiates the effect of BRAF V600E" — curator notes MITF is downstream of BRAF, so the Activation direction is reversed | Teach direction-of-causation reasoning |
-| **Entity specificity** | 3 FP | Family names (NFkappaB, STAT) used where text names specific members (p50, Stat 5B) | Family specificity warnings already in prompt but not caught |
-| **Cross-species/ortholog** | 1 FP | Sir2 (yeast) → SIRT1 (human) mapping — debatable whether this is an error | Domain convention |
+20 remaining errors. v11's deterministic tier resolved 5 grounding errors that were stable across v5–v10 (CagA cross-species, ActA cross-species, DVL1P1 pseudogene ×2, IAPP/amyloid concept mismatch).
 
-### A note on "benchmark noise"
+| Category | Count | Root cause |
+|----------|-------|-----------|
+| **Sentence comprehension** | 6 FP | Third-party agent (galectin-1→Ras/ERK), construct names (Myc-EGFR), "potentiates effect of" ≠ activates, signaling ≠ physical binding |
+| **Domain knowledge** | 5 FP | Cross-species (Sir2→SIRT1), entity boundary truncation, tied gilda scores, multi-protein complex mislabeling |
+| **Benchmark debatable** | 5 FN | Model correctly rejects: reversed direction (Cyclin/E2F1), explicit uncertainty ("still unclear"), multi-step indirect chain, contradictory clauses |
+| **Hedging calibration** | 3 FN | "if associated", "may partially retain" — curators accept, model rejects |
+| **Stochastic** | 1 FN | Flips between runs (contradictory discourse) |
 
-Of the 16 stable disagreements, **the benchmark is right in 11 cases** — these are genuine extraction errors the LLM fails to catch (grounding mismatches, construct names, simulations, reversed directions). The LLM accepts them because the evidence text superficially supports the claimed relationship.
+### Large-scale evaluation (in progress)
 
-In **4 cases, the LLM is right and the benchmark label is questionable** — the evidence sentence doesn't actually support the Statement when read carefully (explicitly stated uncertainty, subject/object swap, multi-step indirect chain). These represent a gap between Statement-level correctness (the biological relationship exists) and evidence-level correctness (this specific sentence supports it).
-
-**1 case is genuinely debatable** (Sir2→SIRT1 cross-species ortholog mapping).
+A 4,647-record evaluation (half-corpus, excluding few-shot examples) reveals performance degrades on the broader corpus: ~78% at 1,800 records scored. The 18 contrastive few-shot examples — 66% of input tokens — were tuned on patterns from the 200-record holdout and don't generalize to the full diversity of INDRA extraction errors (act_vs_amt: 40% miss rate, hypothesis: 38%, grounding: 38%).
 
 ## Setup
 
@@ -139,11 +144,11 @@ pip install gilda indra
 ## Usage
 
 ```python
-from indra_belief.scorers.evidence_scorer import score_record
+from indra_belief.scorers.v11_scorer import score_record
 from indra_belief.model_client import ModelClient
 from indra_belief.data.claim_enricher import build_corpus_index_v8
 
-client = ModelClient("gemma-moe")  # or any OpenAI-compatible endpoint
+client = ModelClient("gemma-remote")  # or "gemma-moe" for local MLX
 indexes = build_corpus_index_v8()
 
 result = score_record(
@@ -158,32 +163,38 @@ result = score_record(
 )
 # result["verdict"] → "correct"
 # result["score"]   → 0.95
-# result["confidence"] → "high"
+# result["tier"]    → "llm_comprehension"
+```
+
+Command-line evaluation:
+```bash
+PYTHONPATH=src python -m indra_belief.scorers.v11_scorer \
+    --model gemma-remote \
+    --holdout data/benchmark/holdout.jsonl \
+    --output data/results/v11.jsonl
 ```
 
 ## Project structure
 
 ```
 src/indra_belief/
-  model_client.py          # LLM client (OpenAI-compat + Anthropic + Gemma 4 tool calling)
+  model_client.py          # LLM client (OpenAI-compat + Anthropic, local + remote)
   scorers/
-    evidence_scorer.py     # v8 — best prompt-only scorer (85.4%)
+    v11_scorer.py          # v11 — deterministic grounding + provenance + LLM (90.0%)
+    v10_scorer.py          # v10 — deterministic grounding + LLM (85.9%)
+    evidence_scorer.py     # v8 — prompt-only scorer (85.4%, foundation for Tier 2)
     agentic_scorer.py      # v9 — two-pass with gilda tool use (experimental)
   tools/
-    gilda_tools.py         # Gilda tool: enriched descriptions, pseudogene tags, alias provenance
-    gene_lookup.py         # Entity matching and grounding utilities
+    grounding_verifier.py  # Deterministic entity verification with gilda scores
+    gilda_tools.py         # Gilda tool schema for agentic scorer
   data/
-    claim_enricher.py      # Corpus index, claim enrichment, entity alias context
-
-scripts/
-  evaluate.py              # AUPRC and accuracy evaluation
-  build_holdout.py         # Reproducible holdout construction (seed=42)
-  run_baseline.py          # v5 baseline scorer
-  ablation_runner.py       # Three-condition ablation framework
+    claim_enricher.py      # Corpus index, claim enrichment, provenance context
 
 data/
-  benchmark/               # Benchmark dataset + holdout
-  results/                 # Evaluation results (v5–v9)
+  benchmark/
+    holdout.jsonl          # 200-record balanced evaluation set
+    holdout_large.jsonl    # 4,647-record half-corpus evaluation set
+  results/                 # Evaluation results (v5–v11)
 ```
 
 ## References
