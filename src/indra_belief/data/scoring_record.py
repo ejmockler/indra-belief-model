@@ -159,8 +159,15 @@ class ScoringRecord:
         return claim
 
     def _format_agent_annotations(self, index: int) -> str:
-        """Format mutations, bound conditions for an agent."""
+        """Format activity, mutations, bound conditions for an agent."""
         parts = []
+        agents = self.statement.agent_list()
+        if index < len(agents) and agents[index]:
+            agent = agents[index]
+            if agent.activity:
+                # agent.activity stringifies as "(activity)" — extract the label
+                act_str = str(agent.activity).strip("()")
+                parts.append(act_str)
         for mut in self.agent_mutations(index):
             res_from = mut.residue_from or ""
             res_to = mut.residue_to or ""
@@ -224,7 +231,7 @@ class ScoringRecord:
             if entity.verification_status == "MISMATCH":
                 # Skip descriptive names (>15 chars with spaces) that resolve to non-HGNC
                 if " " in entity.raw_text and len(entity.raw_text) > 15:
-                    lines.append((role, entity.raw_text, entity.name, "alias", entity.gilda_score))
+                    lines.append((role, entity.raw_text, entity.name, "alias", None))
                 else:
                     has_strong_signal = True
                     lines.append((role, entity.raw_text, entity.name, "MISMATCH", entity.gilda_score))
@@ -232,7 +239,7 @@ class ScoringRecord:
                 has_strong_signal = True
                 lines.append((role, entity.raw_text, entity.name, "LOW_CONFIDENCE", entity.gilda_score))
             else:
-                lines.append((role, entity.raw_text, entity.name, "alias", entity.gilda_score))
+                lines.append((role, entity.raw_text, entity.name, "alias", None))
 
         if not has_strong_signal:
             return ""
