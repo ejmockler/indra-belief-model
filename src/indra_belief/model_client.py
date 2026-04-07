@@ -54,8 +54,9 @@ LOCAL_MODELS: dict[str, dict] = {
         "base_url": "http://100.97.101.59:11434/v1",
         "model_id": "gemma-4-26b",
         "reasoning_in_content": False,
+        "reasoning_effort": "medium",
         "typical_tokens": 400,
-        "max_tokens": 1000,
+        "max_tokens": 4000,
         "timeout": 120,
     },
 }
@@ -124,13 +125,17 @@ class ModelClient:
         self, system: str, messages: list[dict], mt: int, temp: float, timeout: int,
     ) -> ModelResponse:
         full_messages = [{"role": "system", "content": system}] + messages
-        response = self._client.chat.completions.create(
+        kwargs = dict(
             model=self.config["model_id"],
             messages=full_messages,
             max_tokens=mt,
             temperature=temp,
             timeout=timeout,
         )
+        # Pass reasoning_effort for Ollama endpoints that support it
+        if self.config.get("reasoning_effort"):
+            kwargs["extra_body"] = {"reasoning_effort": self.config["reasoning_effort"]}
+        response = self._client.chat.completions.create(**kwargs)
         msg = response.choices[0].message
         content = msg.content or ""
         reasoning = getattr(msg, "reasoning_content", None) or ""
