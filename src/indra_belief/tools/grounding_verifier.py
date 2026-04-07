@@ -41,7 +41,11 @@ def _get_desc(db: str, db_id: str) -> tuple[str, bool]:
         return "", False
 
 
-def verify_mapping(extracted_text: str, claim_entity: str) -> tuple[str, str]:
+LOW_CONFIDENCE_THRESHOLD = 0.53  # catches CagA→S100A8 (0.521), ActA→ACTA1 (0.521)
+                                 # but passes MIP-1α→CCL3 (0.549), alpha-Pix→ARHGEF6 (0.549)
+
+
+def verify_mapping(extracted_text: str, claim_entity: str) -> tuple[str, str, dict]:
     """Check whether an NLP-extracted text entity maps to the claimed gene.
 
     Args:
@@ -49,29 +53,66 @@ def verify_mapping(extracted_text: str, claim_entity: str) -> tuple[str, str]:
         claim_entity: The gene symbol in the INDRA Statement (e.g., "SLU7")
 
     Returns:
-        (status, note) where status is one of:
+        (status, note, metadata) where status is one of:
         - MATCH: extracted text resolves to the same gene as the claim
         - MISMATCH: extracted text resolves to a DIFFERENT gene (auto-reject safe)
         - AMBIGUOUS: claim entity is a candidate but not the top hit
         - UNRESOLVABLE: one or both sides can't be grounded
+
+        metadata dict contains:
+        - gilda_score: float or None (top hit score for extracted_text)
+        - is_low_confidence: bool (score <= LOW_CONFIDENCE_THRESHOLD)
+        - is_pseudogene: bool (claim entity is a pseudogene)
+        - competing_candidates: list of {name, db, id, score} for AMBIGUOUS
+        - text_top_name: str or None (what extracted_text resolves to)
     """
+    empty_meta = {
+        "gilda_score": None, "is_low_confidence": False,
+        "is_pseudogene": False, "competing_candidates": [],
+        "text_top_name": None,
+    }
+
     if not extracted_text or not claim_entity:
-        return "UNRESOLVABLE", "Missing entity name"
+        return "UNRESOLVABLE", "Missing entity name", empty_meta
 
     text_results = _ground(extracted_text)
     claim_results = _ground(claim_entity)
 
     if not text_results:
-        return "UNRESOLVABLE", f'"{extracted_text}" not found in gene databases'
+        return "UNRESOLVABLE", f'"{extracted_text}" not found in gene databases', empty_meta
     if not claim_results:
-        return "UNRESOLVABLE", f'"{claim_entity}" not found in gene databases'
+        return "UNRESOLVABLE", f'"{claim_entity}" not found in gene databases', empty_meta
 
     text_top = text_results[0].term
+    text_score = text_results[0].score
     claim_top = claim_results[0].term
+
+    meta = {
+        "gilda_score": text_score,
+        "is_low_confidence": text_score <= LOW_CONFIDENCE_THRESHOLD,
+        "is_pseudogene": False,
+        "competing_candidates": [],
+        "text_top_name": text_top.entry_name,
+    }
+
+    # Check pseudogene status for claim entity
+    _, claim_pseudo = _get_desc(claim_top.db, str(claim_top.id))
+    meta["is_pseudogene"] = claim_pseudo
 
     # Same (db, id)?
     if text_top.db == claim_top.db and text_top.id == claim_top.id:
-        return "MATCH", f'"{extracted_text}" resolves to {text_top.entry_name} = {claim_entity}'
+        # Check if this is a known alias (appears in gilda names list)
+        is_known_alias = False
+        try:
+            if claim_top.db == "HGNC":
+                names = gilda.get_names("HGNC", str(claim_top.id))
+                is_known_alias = any(
+                    n.lower() == extracted_text.lower() for n in names
+                )
+        except Exception:
+            pass
+        meta["is_known_alias"] = is_known_alias
+        return "MATCH", f'"{extracted_text}" resolves to {text_top.entry_name} = {claim_entity}', meta
 
     # Check if claim entity appears in lower-ranked candidates
     claim_in_candidates = any(
@@ -79,9 +120,22 @@ def verify_mapping(extracted_text: str, claim_entity: str) -> tuple[str, str]:
         for r in text_results[:5]
     )
 
+    # Build competing candidates list for AMBIGUOUS
+    if claim_in_candidates:
+        for r in text_results[:5]:
+            desc, pseudo = _get_desc(r.term.db, str(r.term.id))
+            meta["competing_candidates"].append({
+                "name": r.term.entry_name,
+                "db": r.term.db,
+                "id": str(r.term.id),
+                "score": r.score,
+                "description": desc,
+                "is_pseudogene": pseudo,
+            })
+
     # Get functional descriptions for both sides
     text_desc, text_pseudo = _get_desc(text_top.db, str(text_top.id))
-    claim_desc, claim_pseudo = _get_desc(claim_top.db, str(claim_top.id))
+    claim_desc, _ = _get_desc(claim_top.db, str(claim_top.id))
 
     # Non-gene namespaces
     ns_labels = {"CHEBI": "chemical", "MESH": "MeSH term", "GO": "GO term"}
@@ -98,7 +152,7 @@ def verify_mapping(extracted_text: str, claim_entity: str) -> tuple[str, str]:
             note += f". {claim_entity} is a PSEUDOGENE."
         if text_ns:
             note += f" Note: top match is a {text_ns}, not a gene."
-        return "AMBIGUOUS", note
+        return "AMBIGUOUS", note, meta
     else:
         note = (
             f'"{extracted_text}" resolves to '
@@ -109,14 +163,14 @@ def verify_mapping(extracted_text: str, claim_entity: str) -> tuple[str, str]:
             note += f". Note: \"{extracted_text}\" is a {text_ns}, not a gene."
         if claim_ns:
             note += f" Note: {claim_entity} is a {claim_ns}."
-        return "MISMATCH", note
+        return "MISMATCH", note, meta
 
 
 def check_record(
     subject: str,
     obj: str,
     raw_text: list[str | None] | None,
-) -> list[tuple[str, str, str, str]]:
+) -> list[tuple[str, str, str, str, dict]]:
     """Check all entity mappings for a record.
 
     Args:
@@ -125,8 +179,10 @@ def check_record(
         raw_text: NLP-extracted text spans [subject_text, object_text]
 
     Returns:
-        List of (extracted, claim, status, note) for each mismatched entity.
-        Empty list if all mappings are MATCH or no raw_text available.
+        List of (extracted, claim, status, note, metadata) for each entity
+        where the mapping is not a clean MATCH, or where metadata flags
+        are raised (low confidence, pseudogene, etc.).
+        Empty list if all mappings are clean or no raw_text available.
     """
     if not raw_text:
         return []
@@ -147,9 +203,10 @@ def check_record(
         if rt.lower() == ce.lower():
             continue
 
-        status, note = verify_mapping(rt, ce)
-        if status != "MATCH":
-            results.append((rt, ce, status, note))
+        status, note, meta = verify_mapping(rt, ce)
+        # Include non-MATCH results, AND MATCH results with flags
+        if status != "MATCH" or meta.get("is_low_confidence") or meta.get("is_pseudogene"):
+            results.append((rt, ce, status, note, meta))
 
     return results
 
@@ -183,6 +240,14 @@ if __name__ == "__main__":
     ]
 
     for extracted, claim in test_cases:
-        status, note = verify_mapping(extracted, claim)
+        status, note, meta = verify_mapping(extracted, claim)
         marker = {"MATCH": "✓", "MISMATCH": "✗", "AMBIGUOUS": "~", "UNRESOLVABLE": "?"}[status]
-        print(f"{marker} {extracted:>15s} → {claim:12s}  [{status:12s}]  {note}")
+        flags = []
+        if meta.get("is_low_confidence"):
+            flags.append("LOW_CONF")
+        if meta.get("is_pseudogene"):
+            flags.append("PSEUDO")
+        if meta.get("competing_candidates"):
+            flags.append(f"{len(meta['competing_candidates'])} candidates")
+        flag_str = f"  [{', '.join(flags)}]" if flags else ""
+        print(f"{marker} {extracted:>15s} → {claim:12s}  [{status:12s}]  score={meta.get('gilda_score', '?')}{flag_str}  {note}")
