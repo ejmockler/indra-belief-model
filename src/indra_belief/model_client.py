@@ -50,6 +50,14 @@ LOCAL_MODELS: dict[str, dict] = {
         "max_tokens": 1000,
         "timeout": 60,
     },
+    "gemma-remote": {
+        "base_url": "http://100.97.101.59:11434/v1",
+        "model_id": "gemma-4-26b",
+        "reasoning_in_content": False,
+        "typical_tokens": 400,
+        "max_tokens": 1000,
+        "timeout": 120,
+    },
 }
 
 
