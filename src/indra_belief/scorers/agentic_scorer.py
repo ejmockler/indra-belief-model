@@ -222,8 +222,9 @@ def _format_extraction_provenance(
     Shows what the NLP system actually extracted, only when it differs
     from the claim entities.
     """
-    meta = evidence_meta.get(int(source_hash))
-    if meta is None:
+    from indra_belief.data.claim_enricher import lookup_evidence_meta
+    meta = lookup_evidence_meta(source_hash, subject, obj, evidence_meta)
+    if not meta:
         return ""
     raw_text = meta.get("raw_text")
     if not raw_text or not isinstance(raw_text, list):
@@ -327,7 +328,8 @@ def score_record(
         if extraction_prov and verdict == "correct":
             aliases_text = entity_ctx.lower() if entity_ctx else ""
             # Check if each raw_text entity is already in aliases
-            meta = evidence_meta.get(int(source_hash), {}) if evidence_meta else {}
+            from indra_belief.data.claim_enricher import lookup_evidence_meta
+            meta = lookup_evidence_meta(source_hash, subject, obj, evidence_meta) if evidence_meta else {}
             raw_text = [r for r in (meta.get("raw_text") or []) if r]
             for rt in raw_text[:2]:
                 rt_low = rt.lower()

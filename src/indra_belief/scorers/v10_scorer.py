@@ -25,6 +25,7 @@ from indra_belief.data.claim_enricher import (
     enrich_claim,
     format_entity_context,
     get_evidence_directness,
+    lookup_evidence_meta,
 )
 from indra_belief.model_client import ModelClient
 from indra_belief.tools.grounding_verifier import check_record
@@ -59,13 +60,13 @@ def score_record(
     raw_text = None
     grounding_results = []
     if source_hash is not None and evidence_meta is not None:
-        meta = evidence_meta.get(int(source_hash), {})
+        meta = lookup_evidence_meta(source_hash, subject, obj, evidence_meta)
         raw_text = meta.get("raw_text")
         grounding_results = check_record(subject, obj, raw_text)
 
     # Check for MISMATCH — auto-reject ONLY if the claim entity can't be found
     # in the evidence text (safety check against incomplete raw_text)
-    mismatches = [(rt, ce, s, n) for rt, ce, s, n in grounding_results if s == "MISMATCH"]
+    mismatches = [(rt, ce, s, n, m) for rt, ce, s, n, m in grounding_results if s == "MISMATCH"]
     if mismatches:
         # Safety: does the claim entity (or any known alias) appear in evidence?
         ev_lower = evidence_text.lower()
@@ -76,7 +77,7 @@ def score_record(
         ev_collapsed = ev_lower.replace("-", "").replace(" ", "")
 
         safe_to_reject = True
-        for rt, ce, _, _ in mismatches:
+        for rt, ce, _, _, _ in mismatches:
             ce_low = ce.lower()
             ce_collapsed = ce_low.replace("-", "").replace(" ", "")
             # Check claim entity (exact and normalized)
@@ -119,7 +120,7 @@ def score_record(
                 break
 
         if safe_to_reject:
-            rt, ce, _, note = mismatches[0]
+            rt, ce, _, note, _ = mismatches[0]
             return {
                 "score": 0.05,
                 "verdict": "incorrect",
@@ -135,12 +136,12 @@ def score_record(
     # Check for AMBIGUOUS — LLM judges with corrected framing
     # If LLM says "incorrect" → accept (grounding error caught)
     # If LLM says "correct" or can't parse → fall through to Tier 2
-    ambiguous = [(rt, ce, s, n) for rt, ce, s, n in grounding_results if s == "AMBIGUOUS"]
+    ambiguous = [(rt, ce, s, n, m) for rt, ce, s, n, m in grounding_results if s == "AMBIGUOUS"]
     ambiguous_rejected = False
     ambiguous_raw = ""
     ambiguous_tokens = 0
     if ambiguous:
-        rt, ce, _, note = ambiguous[0]
+        rt, ce, _, note, _ = ambiguous[0]
 
         claim_str = enrich_claim(subject, stmt_type, obj, source_hash, corpus_index) if corpus_index else f"{subject} [{stmt_type}] {obj}"
 

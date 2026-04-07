@@ -120,7 +120,14 @@ def build_corpus_index_v8(
 
     Returns dict with two keys:
       - "statements": source_hash → stmt_light (same as build_corpus_index)
-      - "evidence_meta": source_hash → {"raw_text": [...], "direct": bool|None}
+      - "evidence_meta": source_hash → list of evidence entry dicts
+
+    Each evidence entry dict contains:
+      raw_text, direct, found_by, source_api, entities
+
+    Multiple statements can share the same source_hash (same evidence
+    sentence, different extracted relationships). The ``entities`` field
+    disambiguates — use ``lookup_evidence_meta()`` to find the right entry.
     """
     corpus_path = Path(corpus_path)
     print(f"Loading corpus from {corpus_path} ...")
@@ -132,7 +139,7 @@ def build_corpus_index_v8(
     print(f"  {total:,} statements loaded. Building v8 indexes ...")
 
     stmt_index: dict[int, dict] = {}
-    ev_meta: dict[int, dict] = {}
+    ev_meta: dict[int, list] = {}
     report_every = 100_000
 
     for i, stmt in enumerate(statements):
@@ -147,6 +154,13 @@ def build_corpus_index_v8(
             k: v for k, v in stmt.items() if k != "evidence"
         }
 
+        # Extract entity names from statement for disambiguation
+        subj_name = stmt.get("subj", {}).get("name") if stmt.get("subj") else None
+        obj_name = stmt.get("obj", {}).get("name") if stmt.get("obj") else None
+        member_names = [m.get("name") for m in stmt.get("members", [])
+                        if m.get("name")] if stmt.get("members") else []
+        entity_names = [n for n in ([subj_name, obj_name] if subj_name else member_names) if n]
+
         for ev in evidence_list:
             sh = ev.get("source_hash")
             if sh is None:
@@ -155,18 +169,191 @@ def build_corpus_index_v8(
             stmt_index[sh] = stmt_light
 
             # Extract evidence-level metadata
-            agents = ev.get("annotations", {}).get("agents", {})
+            annotations = ev.get("annotations", {})
+            agents = annotations.get("agents", {})
             raw_text = agents.get("raw_text")  # list of extracted text spans
             epistemics = ev.get("epistemics", {})
             direct = epistemics.get("direct")  # True, False, or None
+            found_by = annotations.get("found_by")  # NLP reader extraction pattern
+            source_api = ev.get("source_api")  # NLP reader name
 
-            ev_meta[sh] = {
+            entry = {
                 "raw_text": raw_text,
                 "direct": direct,
+                "found_by": found_by,
+                "source_api": source_api,
+                "entities": entity_names,
             }
+
+            if sh not in ev_meta:
+                ev_meta[sh] = []
+            ev_meta[sh].append(entry)
 
     print(f"  Done. {len(stmt_index):,} statement entries, {len(ev_meta):,} evidence entries.")
     return {"statements": stmt_index, "evidence_meta": ev_meta}
+
+
+def lookup_evidence_meta(
+    source_hash: int,
+    subject: str,
+    obj: str,
+    evidence_meta: dict,
+) -> dict:
+    """Look up evidence metadata for a specific (source_hash, subject, object).
+
+    Handles the source_hash collision problem: multiple statements can share
+    one evidence sentence. This function finds the entry whose statement
+    entities match the claim.
+
+    Returns a single evidence entry dict, or empty dict if not found.
+    """
+    entries = evidence_meta.get(int(source_hash), [])
+    if not entries:
+        return {}
+
+    # Backward compat: old format stored a single dict
+    if isinstance(entries, dict):
+        return entries
+
+    if len(entries) == 1:
+        return entries[0]
+
+    # Multiple entries — find the one matching our claim entities.
+    # ONLY return exact matches (both entities found). Partial matches
+    # return wrong raw_text from a different statement sharing this hash.
+    claim_set = {subject.lower(), obj.lower()} - {"?", ""}
+
+    for entry in entries:
+        entry_ents = {e.lower() for e in entry.get("entities", []) if e}
+        if len(claim_set & entry_ents) == len(claim_set):
+            return entry  # exact match — both entities found
+
+    # No exact match — return first entry but WITHOUT raw_text
+    # (raw_text from a different statement would be misleading)
+    fallback = dict(entries[0])
+    fallback.pop("raw_text", None)
+    fallback.pop("entities", None)
+    return fallback
+
+
+# ---------------------------------------------------------------------------
+# Provenance context (Phase 2)
+# ---------------------------------------------------------------------------
+
+# Reader patterns known to produce specific error types
+_HIGH_RISK_FOUND_BY = frozenset({
+    "BIO-ASSOCIATE",   # often protein-DNA not protein-protein
+    "BIO-FORM",        # entity/property confusion (amyloid → IAPP)
+    "BINDING",         # overmatches (construct tags, MD simulations)
+    "INTERACT",        # broad pattern, grounding errors
+})
+
+_MEDIUM_RISK_PREFIXES = (
+    "binding",         # binding1a, binding11 — list extraction, non-binding "interactions"
+    "Positive_activation_syntax",  # direction errors ("potentiates effect of")
+)
+
+
+def format_provenance_context(
+    subject: str,
+    obj: str,
+    source_hash: int,
+    evidence_meta: dict,
+    grounding_results: list | None = None,
+) -> str:
+    """Build targeted provenance context for the LLM.
+
+    Shows extraction metadata ONLY when there's a strong signal:
+    - MISMATCH or AMBIGUOUS entity mapping (not UNRESOLVABLE — gilda often
+      can't ground valid compound NLP names like "Aurora B", "Cyclin A/CDK2")
+    - Low-confidence MATCH (gilda score ≤ threshold)
+    - High-risk found_by pattern combined with an entity-level signal
+
+    Returns empty string when no signal detected.
+    Target trigger rate: 10-15% of records.
+    """
+    meta = lookup_evidence_meta(source_hash, subject, obj, evidence_meta)
+    if not meta:
+        return ""
+
+    raw_text = meta.get("raw_text") or []
+    raw_text = [r for r in raw_text if r]
+    found_by = meta.get("found_by") or ""
+    source_api = meta.get("source_api") or ""
+
+    if not raw_text:
+        return ""
+
+    # --- Check for entity-level signals from grounding_results ---
+    entity_lines = []
+    has_strong_signal = False  # MISMATCH, AMBIGUOUS, or low_confidence
+    claim_entities = [subject, obj]
+
+    for i, rt in enumerate(raw_text[:2]):
+        if i >= len(claim_entities):
+            break
+        ce = claim_entities[i]
+        role = ["Subject", "Object"][i]
+
+        if rt.lower() == ce.lower():
+            # Literal match — only include if we're already showing provenance
+            entity_lines.append((role, rt, ce, "exact", None))
+            continue
+
+        # Look up in grounding_results
+        matched = False
+        if grounding_results:
+            for gr_rt, gr_ce, gr_status, gr_note, gr_meta in grounding_results:
+                if gr_rt == rt and gr_ce == ce:
+                    score = gr_meta.get("gilda_score")
+                    if gr_status == "MISMATCH":
+                        # Skip cross-namespace descriptive names —
+                        # e.g., "nucleosome assembly protein-1" → MeSH ≠ HGNC:NAP1L1
+                        # These are valid protein names gilda routes to a concept
+                        text_top = gr_meta.get("text_top_name", "")
+                        is_descriptive = " " in rt and len(rt) > 15
+                        is_cross_ns = text_top and text_top != ce  # crude but sufficient
+                        if is_descriptive:
+                            entity_lines.append((role, rt, ce, "alias", score))
+                        else:
+                            has_strong_signal = True
+                            entity_lines.append((role, rt, ce, gr_status, score))
+                    elif gr_status == "MATCH" and gr_meta.get("is_low_confidence"):
+                        has_strong_signal = True
+                        entity_lines.append((role, rt, ce, "LOW_CONFIDENCE", score))
+                    else:
+                        entity_lines.append((role, rt, ce, "alias", score))
+                    matched = True
+                    break
+
+        if not matched:
+            # Not in grounding_results = clean MATCH without flags
+            entity_lines.append((role, rt, ce, "alias", None))
+
+    # --- Decide whether to show provenance ---
+    if not has_strong_signal:
+        return ""
+
+    # --- Format the provenance block ---
+    parts = ["Extraction provenance:"]
+    for role, rt, ce, status, score in entity_lines:
+        score_str = f", gilda: {score:.2f}" if score is not None else ""
+        if status == "exact":
+            parts.append(f'  {role}: NLP extracted "{rt}" → {ce} (exact match)')
+        elif status == "alias":
+            parts.append(f'  {role}: NLP extracted "{rt}" → {ce} (confirmed alias{score_str})')
+        elif status == "MISMATCH":
+            parts.append(f'  {role}: NLP extracted "{rt}" → mapped to {ce} (MISMATCH — "{rt}" is a DIFFERENT entity{score_str})')
+        elif status == "LOW_CONFIDENCE":
+            parts.append(f'  {role}: NLP extracted "{rt}" → mapped to {ce} (LOW CONFIDENCE{score_str} — not a confirmed alias)')
+        else:
+            parts.append(f'  {role}: NLP extracted "{rt}" → {ce} ({status}{score_str})')
+
+    if found_by and found_by != "?":
+        reader_label = source_api if source_api else "unknown"
+        parts.append(f"  Reader: {reader_label}, pattern: {found_by}")
+
+    return "\n".join(parts)
 
 
 def _gilda_resolves_to(text_form: str, claim_entity: str) -> bool:
@@ -215,8 +402,8 @@ def get_extraction_context(
     claim entity — i.e., a genuine grounding mismatch, not just a standard
     alias like RSK1→RPS6KA1.
     """
-    meta = evidence_meta.get(int(source_hash))
-    if meta is None:
+    meta = lookup_evidence_meta(source_hash, subject, obj, evidence_meta)
+    if not meta:
         return ""
 
     raw_text = meta.get("raw_text")
@@ -277,6 +464,8 @@ def get_extraction_context(
 def get_evidence_directness(
     source_hash: int,
     evidence_meta: dict[int, dict],
+    subject: str = "",
+    obj: str = "",
 ) -> bool | None:
     """Return epistemics.direct for this evidence.
 
@@ -284,8 +473,16 @@ def get_evidence_directness(
     False = indirect/review/computational
     None = unknown
     """
-    meta = evidence_meta.get(int(source_hash))
-    if meta is None:
+    if subject and obj:
+        meta = lookup_evidence_meta(source_hash, subject, obj, evidence_meta)
+    else:
+        # Fallback for callers that don't pass entities
+        entries = evidence_meta.get(int(source_hash), [])
+        if isinstance(entries, list):
+            meta = entries[0] if entries else {}
+        else:
+            meta = entries
+    if not meta:
         return None
     return meta.get("direct")
 
@@ -547,20 +744,66 @@ def _get_fplx_members(fplx_id: str) -> list[str]:
         return []
 
 
-def format_entity_context(subject: str, obj: str) -> str:
+def _format_graduated_warning(
+    entity_name: str,
+    raw_text_span: str | None,
+    verification: tuple | None,
+) -> str:
+    """Format a graduated warning for an entity based on grounding verification.
+
+    Returns a warning string to append after the standard alias context,
+    or empty string if no warning needed.
+
+    Only emits warnings for LOW_CONFIDENCE MATCH and PSEUDOGENE.
+    AMBIGUOUS and UNRESOLVABLE warnings are EXCLUDED — they redirect
+    the model's attention from sentence comprehension to entity identity,
+    causing more regressions (CADPS, RPSA, RPS6KA1, SIRT1/PPARG,
+    CHEK1/AURKB) than improvements (SLU7/DYRK1A).
+    """
+    if verification is None or raw_text_span is None:
+        return ""
+
+    _, _, status, note, meta = verification
+    warnings = []
+
+    if meta.get("is_pseudogene"):
+        warnings.append(f"{entity_name} is a PSEUDOGENE (does not encode functional protein)")
+
+    if meta.get("is_low_confidence") and status == "MATCH":
+        known = meta.get("is_known_alias", False)
+        if not known:
+            warnings.append(
+                f'"{raw_text_span}" mapped to {entity_name} '
+                f'(gilda score: {meta["gilda_score"]:.2f}, LOW CONFIDENCE — '
+                f'not a known alias for {entity_name})'
+            )
+
+    return " | ".join(f"⚠ {w}" for w in warnings)
+
+
+def format_entity_context(
+    subject: str,
+    obj: str,
+    grounding_results: list | None = None,
+    raw_text: list | None = None,
+) -> str:
     """Build a one-line entity context string for both claim entities.
 
     Parameters
     ----------
     subject, obj
         Entity names from the claim.
+    grounding_results
+        Optional list of (extracted, claim, status, note, metadata) tuples
+        from check_record(). When provided, produces graduated warnings
+        for ambiguous/low-confidence/pseudogene mappings.
+    raw_text
+        Optional raw_text spans [subject_text, object_text] from evidence metadata.
 
     Returns
     -------
     str
-        Context line like ``"Entities: LARG (HGNC: ARHGEF12, aliases: LARG)
-        | NXF1 (HGNC: NXF1, aliases: TAP, Mex67)"``, or empty string if
-        neither entity yields useful context.
+        Context line with aliases and optional graduated warnings.
     """
     subj_ctx = get_alias_context(subject)
     obj_ctx = get_alias_context(obj)
@@ -572,8 +815,25 @@ def format_entity_context(subject: str, obj: str) -> str:
         parts = [p for p in (subj_ctx, obj_ctx) if p]
 
     if not parts:
-        return ""
-    return "Entities: " + " | ".join(parts)
+        base = ""
+    else:
+        base = "Entities: " + " | ".join(parts)
+
+    # Add graduated warnings from grounding verification
+    if grounding_results and raw_text:
+        warnings = []
+        for result in grounding_results:
+            rt, ce, status, note, meta = result
+            warning = _format_graduated_warning(ce, rt, result)
+            if warning:
+                warnings.append(warning)
+        if warnings:
+            warning_block = "\n".join(warnings)
+            if base:
+                return base + "\n" + warning_block
+            return warning_block
+
+    return base
 
 
 # ---------------------------------------------------------------------------

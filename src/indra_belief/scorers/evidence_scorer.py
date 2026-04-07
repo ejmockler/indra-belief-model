@@ -280,7 +280,7 @@ def score_record(
     # Layer 4: Evidence directness
     ev_prefix = ""
     if source_hash is not None and evidence_meta is not None:
-        direct = get_evidence_directness(source_hash, evidence_meta)
+        direct = get_evidence_directness(source_hash, evidence_meta, subject, obj)
         if direct is False:
             ev_prefix = "[indirect evidence] "
 
