@@ -92,7 +92,7 @@ def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) ->
         "confidence": confidence,
         "raw_text": f"[TIER 2 LLM]\n{response.raw_text}",
         "tokens": response.tokens,
-        "tier": tier_label,
+        "tier": "llm_comprehension",
         "grounding_status": grounding_status,
         "provenance_triggered": provenance_triggered,
     }
