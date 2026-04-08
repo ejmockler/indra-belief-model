@@ -46,41 +46,96 @@ _PROVENANCE_RULE = """
 SYSTEM_PROMPT = _V8_SYSTEM_PROMPT.rstrip() + "\n" + _PROVENANCE_RULE
 
 # --- Adaptive few-shot selection ---
-# Core examples (general-purpose, always included): indices into _ALL_EXAMPLES
-# Pair 2 (act_vs_amt): indices 2,3
-# Pair 3 (logical_inversion): indices 4,5
-# Pair 4 (hedging_scope): indices 6,7
-# Pair 7 (parallel_activation / third-party agent): indices 12,13
-_CORE_INDICES = [2, 3, 4, 5, 6, 7, 12, 13]
-_CORE_EXAMPLES = [_ALL_EXAMPLES[i] for i in _CORE_INDICES]
+# Same budget as v8 (9 pairs = 18 examples), but content tailored to
+# the record's statement type: own type + adjacent types + universals.
 
 # Type-specific example bank (loaded from JSON)
 _EXAMPLE_BANK_PATH = Path(__file__).parent.parent / "data" / "example_bank.json"
-_TYPE_EXAMPLES: dict[str, list[dict]] = {}
+_TYPE_BANK: dict[str, list[dict]] = {}
 if _EXAMPLE_BANK_PATH.exists():
     with open(_EXAMPLE_BANK_PATH) as _f:
-        _TYPE_EXAMPLES = json.load(_f)
+        _TYPE_BANK = json.load(_f)
+
+# Map v8 examples into pairs by their statement type
+_V8_PAIRS: dict[str, list[list[dict]]] = {}
+for i in range(0, len(_ALL_EXAMPLES), 2):
+    stype = _ALL_EXAMPLES[i]["claim"].split("[")[1].split("]")[0].strip()
+    _V8_PAIRS.setdefault(stype, []).append([_ALL_EXAMPLES[i], _ALL_EXAMPLES[i + 1]])
+
+# Universal pairs (indices into _ALL_EXAMPLES — patterns that apply to all types)
+_UNIVERSAL_PAIRS = [
+    _ALL_EXAMPLES[4:6],    # Pair 3: logical inversion (AGER/MMP2, TP53/MDM2)
+    _ALL_EXAMPLES[6:8],    # Pair 4: hedging scope (MYB/PPID)
+    _ALL_EXAMPLES[12:14],  # Pair 7: parallel activation / third-party agent
+]
+
+# Which types are commonly confused with each other?
+_TYPE_ADJACENCY = {
+    "Phosphorylation": ["Dephosphorylation", "Autophosphorylation"],
+    "Dephosphorylation": ["Phosphorylation", "Inhibition"],
+    "Activation": ["IncreaseAmount", "Inhibition"],
+    "Inhibition": ["DecreaseAmount", "Activation"],
+    "IncreaseAmount": ["Activation", "DecreaseAmount"],
+    "DecreaseAmount": ["IncreaseAmount", "Inhibition"],
+    "Complex": ["Activation"],
+    "Autophosphorylation": ["Phosphorylation"],
+    "Translocation": [],
+    "Ubiquitination": [],
+    "Acetylation": ["Deacetylation"],
+}
+
+TARGET_PAIRS = 9  # same budget as v8
 
 
 def _select_examples(stmt_type: str) -> list[dict]:
-    """Select few-shot examples for a record's statement type.
+    """Select 9 contrastive pairs (18 examples) for a record's statement type.
 
-    Always includes 4 core pairs (8 examples) for general patterns.
-    Adds 1 type-matched pair (2 examples) if available.
-    Falls back to all 18 v8 examples for types with no bank entry.
+    Priority:
+    1. Own type pair(s) — from bank and/or v8
+    2. Adjacent type pairs — types commonly confused with this one
+    3. Universal patterns — hedging, logical inversion, parallel activation
+    4. Fill from remaining v8 pairs
     """
-    type_pair = _TYPE_EXAMPLES.get(stmt_type, [])
-    if type_pair:
-        return _CORE_EXAMPLES + type_pair
-    # For covered types (Complex, Activation, Phosphorylation), use existing v8 examples
-    # that match the type, plus core
-    type_specific = [ex for ex in _ALL_EXAMPLES
-                     if ex["claim"].split("[")[1].split("]")[0].strip() == stmt_type
-                     and _ALL_EXAMPLES.index(ex) not in _CORE_INDICES]
-    if type_specific:
-        return _CORE_EXAMPLES + type_specific[:2]
-    # Fallback: core only
-    return _CORE_EXAMPLES
+    selected: list[list[dict]] = []
+    used_claims: set[str] = set()
+
+    def _add_pair(pair: list[dict]) -> bool:
+        key = pair[0]["claim"]
+        if key in used_claims or len(selected) >= TARGET_PAIRS:
+            return False
+        selected.append(pair)
+        used_claims.add(key)
+        return True
+
+    # 1. Own type from bank
+    if stmt_type in _TYPE_BANK:
+        bank_exs = _TYPE_BANK[stmt_type]
+        _add_pair(bank_exs)  # bank pairs are [correct, incorrect]
+
+    # 1b. Own type from v8
+    for pair in _V8_PAIRS.get(stmt_type, []):
+        _add_pair(pair)
+
+    # 2. Adjacent types
+    for adj_type in _TYPE_ADJACENCY.get(stmt_type, []):
+        if adj_type in _TYPE_BANK:
+            _add_pair(_TYPE_BANK[adj_type])
+        for pair in _V8_PAIRS.get(adj_type, []):
+            _add_pair(pair)
+
+    # 3. Universal patterns
+    for pair in _UNIVERSAL_PAIRS:
+        _add_pair(pair)
+
+    # 4. Fill remaining from v8 pairs
+    for i in range(0, len(_ALL_EXAMPLES), 2):
+        _add_pair([_ALL_EXAMPLES[i], _ALL_EXAMPLES[i + 1]])
+
+    # Flatten pairs into example list
+    examples = []
+    for pair in selected[:TARGET_PAIRS]:
+        examples.extend(pair)
+    return examples
 
 
 def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) -> dict:
