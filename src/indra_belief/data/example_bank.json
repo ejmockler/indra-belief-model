@@ -1,0 +1,114 @@
+{
+  "Dephosphorylation": [
+    {
+      "claim": "PPM1D [Dephosphorylation] BAX",
+      "evidence": "These results show that Wip1 directly interacts with and dephosphorylates BAX.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Direct statement: Wip1 (=PPM1D) 'dephosphorylates BAX'. Wip1 is a known alias for PPM1D."
+    },
+    {
+      "claim": "ILK [Dephosphorylation] GSK3B",
+      "evidence": "ILK also causes inhibitory phosphorylation of GSK-3beta, a kinase that prevents functional activation of both Snail and beta-catenin.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "The text says ILK causes PHOSPHORYLATION of GSK-3beta, not dephosphorylation. The claim type is inverted \u2014 this is a Phosphorylation, not Dephosphorylation."
+    }
+  ],
+  "Inhibition": [
+    {
+      "claim": "BRMS1 [Inhibition] CUL3",
+      "evidence": "BRMS1 overexpression blocked Cullin3 driven EMT, and metastasis.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "'Blocked Cullin3 driven EMT' = BRMS1 inhibits the activity/function of CUL3. Direct functional inhibition."
+    },
+    {
+      "claim": "STAT6 [Inhibition] BCL6",
+      "evidence": "pSTAT6 transcriptionally represses BCL6.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'Transcriptionally represses' = reduces BCL6 mRNA/protein levels. This is DecreaseAmount (expression reduction), not Inhibition (activity suppression)."
+    }
+  ],
+  "IncreaseAmount": [
+    {
+      "claim": "IL1 [IncreaseAmount] IL6",
+      "evidence": "IL-1 and TNF induce the expression of IL-6.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "'Induce the expression of IL-6' = increase IL-6 mRNA/protein levels. This is IncreaseAmount."
+    },
+    {
+      "claim": "SUMO1 [IncreaseAmount] SP1",
+      "evidence": "Overexpression of Sumo1 specific proteases Senp1 upregulated Prdx6 and Sp1 expression.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "Senp1 (a SUMO protease that removes SUMO1) upregulated SP1 \u2014 not SUMO1 itself. The agent is Senp1, not SUMO1."
+    }
+  ],
+  "DecreaseAmount": [
+    {
+      "claim": "MMP14 [DecreaseAmount] SPRY4",
+      "evidence": "MT1-MMP inhibits SPRY4 expression via MMP2 and RAC1.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "'Inhibits SPRY4 expression' = decreases SPRY4 levels. MT1-MMP is MMP14. DecreaseAmount confirmed."
+    },
+    {
+      "claim": "FGFR2 [DecreaseAmount] EPCAM",
+      "evidence": "In vitro transient KD of FGFR2 decreased CD44 and EpCAM protein levels.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "Knockdown (KD) of FGFR2 decreased EpCAM \u2014 logical inversion. FGFR2 normally INCREASES EpCAM; losing FGFR2 decreases it. The claim should be IncreaseAmount, not DecreaseAmount."
+    }
+  ],
+  "Autophosphorylation": [
+    {
+      "claim": "ERK5 [Autophosphorylation] ERK5",
+      "evidence": "It is interesting that ERK5 was able to autophosphorylate its own tail.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Direct statement: ERK5 autophosphorylates itself. Self-modification confirmed."
+    },
+    {
+      "claim": "ATM [Autophosphorylation] ATM",
+      "evidence": "These results suggest that stabilization of ATM at DSBs is largely mediated by an interaction between autophosphorylated ATM and the MRN complex.",
+      "verdict": "incorrect",
+      "confidence": "medium",
+      "reason": "The text mentions 'autophosphorylated ATM' as a state, but the sentence is about MRN-mediated stabilization, not the autophosphorylation event itself. The evidence doesn't describe ATM performing autophosphorylation."
+    }
+  ],
+  "Translocation": [
+    {
+      "claim": "HSP90 [Translocation] IRF3",
+      "evidence": "The mitochondrial outer membrane protein Tom70 recruits IRF3 to mitochondria via Hsp90.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "HSP90 mediates IRF3 translocation to mitochondria (via Tom70). Translocation relationship supported."
+    },
+    {
+      "claim": "BAX [Translocation] BAX",
+      "evidence": "It has been proposed that Bax does not translocate to mitochondria under normal physiological conditions, due to interaction with Bcl-xL.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'Does not translocate' \u2014 negative result. The evidence explicitly states translocation does NOT occur under these conditions."
+    }
+  ],
+  "Ubiquitination": [
+    {
+      "claim": "RAD18 [Ubiquitination] TP53BP1",
+      "evidence": "A RAD18 complex monoubiquitinates, but does not poly-ubiquitinate, 53BP1 in vitro.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Direct: RAD18 complex monoubiquitinates 53BP1. Ubiquitination confirmed (mono, not poly)."
+    },
+    {
+      "claim": "RAD18 [Ubiquitination] TP53BP1",
+      "evidence": "First, we examined whether purified RAD18 and RAD6 complex could ubiquitinate 53BP1 in vitro using the purified HA tagged full-length 53BP1.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'We examined whether...could ubiquitinate' \u2014 this is an experimental question, not a result. The sentence does not assert that ubiquitination occurred."
+    }
+  ]
+}

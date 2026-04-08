@@ -25,7 +25,7 @@ from indra_belief.model_client import ModelClient
 
 from indra_belief.scorers.evidence_scorer import (
     SYSTEM_PROMPT as _V8_SYSTEM_PROMPT,
-    CONTRASTIVE_EXAMPLES,
+    CONTRASTIVE_EXAMPLES as _ALL_EXAMPLES,
     _render_example,
     extract_verdict,
     verdict_to_score,
@@ -44,6 +44,43 @@ _PROVENANCE_RULE = """
 """
 
 SYSTEM_PROMPT = _V8_SYSTEM_PROMPT.rstrip() + "\n" + _PROVENANCE_RULE
+
+# --- Adaptive few-shot selection ---
+# Core examples (general-purpose, always included): indices into _ALL_EXAMPLES
+# Pair 2 (act_vs_amt): indices 2,3
+# Pair 3 (logical_inversion): indices 4,5
+# Pair 4 (hedging_scope): indices 6,7
+# Pair 7 (parallel_activation / third-party agent): indices 12,13
+_CORE_INDICES = [2, 3, 4, 5, 6, 7, 12, 13]
+_CORE_EXAMPLES = [_ALL_EXAMPLES[i] for i in _CORE_INDICES]
+
+# Type-specific example bank (loaded from JSON)
+_EXAMPLE_BANK_PATH = Path(__file__).parent.parent / "data" / "example_bank.json"
+_TYPE_EXAMPLES: dict[str, list[dict]] = {}
+if _EXAMPLE_BANK_PATH.exists():
+    with open(_EXAMPLE_BANK_PATH) as _f:
+        _TYPE_EXAMPLES = json.load(_f)
+
+
+def _select_examples(stmt_type: str) -> list[dict]:
+    """Select few-shot examples for a record's statement type.
+
+    Always includes 4 core pairs (8 examples) for general patterns.
+    Adds 1 type-matched pair (2 examples) if available.
+    Falls back to all 18 v8 examples for types with no bank entry.
+    """
+    type_pair = _TYPE_EXAMPLES.get(stmt_type, [])
+    if type_pair:
+        return _CORE_EXAMPLES + type_pair
+    # For covered types (Complex, Activation, Phosphorylation), use existing v8 examples
+    # that match the type, plus core
+    type_specific = [ex for ex in _ALL_EXAMPLES
+                     if ex["claim"].split("[")[1].split("]")[0].strip() == stmt_type
+                     and _ALL_EXAMPLES.index(ex) not in _CORE_INDICES]
+    if type_specific:
+        return _CORE_EXAMPLES + type_specific[:2]
+    # Fallback: core only
+    return _CORE_EXAMPLES
 
 
 def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) -> dict:
@@ -66,8 +103,11 @@ def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) ->
     user_msg = record.format_user_message()
     provenance_triggered = bool(record.format_provenance())
 
+    # Adaptive few-shot: core examples + type-matched pair
+    examples = _select_examples(record.stmt_type)
+
     messages = []
-    for ex in CONTRASTIVE_EXAMPLES:
+    for ex in examples:
         u, a = _render_example(ex)
         messages.append({"role": "user", "content": u})
         messages.append({"role": "assistant", "content": a})
