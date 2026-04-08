@@ -106,13 +106,31 @@ class ModelClient:
         messages: list[dict],
         max_tokens: int | None = None,
         temperature: float = 0.1,
+        retries: int = 3,
     ) -> ModelResponse:
         """Call the model with a system prompt and messages.
 
         Returns ModelResponse with unified fields regardless of backend.
+        Retries on timeout errors.
         """
+        import time as _time
+
         mt = max_tokens or self.config.get("max_tokens", 2000)
         timeout = self.config.get("timeout", 120)
+
+        for attempt in range(retries):
+            try:
+                if self.backend == "openai_compat":
+                    return self._call_openai_compat(system, messages, mt, temperature, timeout)
+                elif self.backend == "anthropic":
+                    return self._call_anthropic(system, messages, mt, temperature, timeout)
+                else:
+                    raise ValueError(f"Unknown backend: {self.backend}")
+            except Exception as e:
+                if attempt < retries - 1 and ("timeout" in str(e).lower() or "connection" in str(e).lower()):
+                    _time.sleep(2 ** attempt)
+                    continue
+                raise
 
         if self.backend == "openai_compat":
             return self._call_openai_compat(system, messages, mt, temperature, timeout)
