@@ -200,11 +200,16 @@ class GroundedEntity:
                 return True, f"Grounding mismatch: {self.verification_note}"
 
         if self.verification_status == "MATCH" and self.is_low_confidence:
-            return True, (
-                f'Low-confidence grounding: "{self.raw_text}" mapped to '
-                f'{self.name} (gilda score: {self.gilda_score:.3f} '
-                f'— below confidence threshold)'
-            )
+            # Same safety check as MISMATCH — if the claim entity appears
+            # in the evidence text, the mapping may be valid despite low score.
+            # At scale, 46% of LOW_CONFIDENCE auto-rejects are false rejections
+            # without this check (30/65 on the 3639-record evaluation).
+            if not self._entity_in_evidence(evidence_text):
+                return True, (
+                    f'Low-confidence grounding: "{self.raw_text}" mapped to '
+                    f'{self.name} (gilda score: {self.gilda_score:.3f} '
+                    f'— below confidence threshold)'
+                )
 
         if self.verification_status == "AMBIGUOUS" and self.is_pseudogene:
             return True, f"Pseudogene mapping: {self.name} is a pseudogene. {self.verification_note}"

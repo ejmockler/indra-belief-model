@@ -273,7 +273,10 @@ class ScoringRecord:
         if provenance:
             parts.append(provenance)
 
-        ev_prefix = "[indirect evidence] " if self.is_direct is False else ""
+        # [indirect evidence] marker removed — at scale it causes 5pp higher
+        # FN rate (22% vs 17%) by prejudicing the model toward rejection.
+        # The model can detect indirect evidence from sentence structure itself.
+        ev_prefix = ""
         parts.append(f'EVIDENCE: "{ev_prefix}{self.evidence_text}"')
 
         return "\n".join(parts)

@@ -57,37 +57,10 @@ def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) ->
     if reject:
         return reject
 
-    # --- Tier 1d: AMBIGUOUS → LLM judges ---
-    ambiguous_tokens = 0
-    for entity in (record.subject_entity, record.object_entity):
-        if entity and entity.verification_status == "AMBIGUOUS" and not entity.is_pseudogene:
-            prompt = (
-                f"The text-mining system extracted: {record.format_claim()}\n\n"
-                f"Grounding verification: AMBIGUOUS — {entity.verification_note}\n\n"
-                f'Evidence: "{record.evidence_text}"\n\n'
-                f"Is this extraction correct or incorrect?\n"
-                f'Output JSON: {{"verdict": "correct" or "incorrect"}}'
-            )
-            response = client.call(
-                system="You judge whether a text-mining EXTRACTION is correct. Output JSON.",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max(max_tokens, 16384),
-            )
-            verdict, confidence = extract_verdict(response.raw_text)
-            ambiguous_tokens = response.tokens
-
-            if verdict == "incorrect":
-                return {
-                    "score": verdict_to_score(verdict, confidence),
-                    "verdict": verdict,
-                    "confidence": confidence,
-                    "raw_text": f"[TIER 1 AMBIGUOUS → REJECTED]\n{response.raw_text}",
-                    "tokens": response.tokens,
-                    "tier": "ambiguous_rejected",
-                    "grounding_status": "AMBIGUOUS",
-                    "provenance_triggered": False,
-                }
-            break  # only check the first AMBIGUOUS entity
+    # AMBIGUOUS entities go directly to Tier 2 — the intermediate AMBIGUOUS
+    # LLM was 64% accurate at scale (barely better than coin flip) and added
+    # an extra LLM call that primed the model with grounding-focused evaluation
+    # before the comprehension evaluation.
 
     # --- Tier 2: LLM text comprehension ---
     user_msg = record.format_user_message()
@@ -108,26 +81,17 @@ def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) ->
     verdict, confidence = extract_verdict(response.raw_text)
 
     # Determine grounding status
-    has_ambiguous = any(
-        e.verification_status == "AMBIGUOUS"
-        for e in (record.subject_entity, record.object_entity) if e
-    )
-    if has_ambiguous:
-        grounding_status = "AMBIGUOUS_accepted"
-    elif any(e.has_grounding_signal for e in (record.subject_entity, record.object_entity) if e):
-        grounding_status = "MATCH_flagged"
+    if any(e.has_grounding_signal for e in (record.subject_entity, record.object_entity) if e):
+        grounding_status = "flagged"
     else:
         grounding_status = "all_match"
-
-    tier_label = "ambiguous_then_llm" if has_ambiguous else "llm_comprehension"
-    raw_prefix = "[TIER 1 AMBIGUOUS → accepted → TIER 2 LLM]" if has_ambiguous else "[TIER 2 LLM]"
 
     return {
         "score": verdict_to_score(verdict, confidence),
         "verdict": verdict,
         "confidence": confidence,
-        "raw_text": f"{raw_prefix}\n{response.raw_text}",
-        "tokens": response.tokens + ambiguous_tokens,
+        "raw_text": f"[TIER 2 LLM]\n{response.raw_text}",
+        "tokens": response.tokens,
         "tier": tier_label,
         "grounding_status": grounding_status,
         "provenance_triggered": provenance_triggered,
