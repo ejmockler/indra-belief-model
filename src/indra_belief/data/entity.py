@@ -200,11 +200,12 @@ class GroundedEntity:
                 return True, f"Grounding mismatch: {self.verification_note}"
 
         if self.verification_status == "MATCH" and self.is_low_confidence:
-            # Same safety check as MISMATCH — if the claim entity appears
-            # in the evidence text, the mapping may be valid despite low score.
-            # At scale, 46% of LOW_CONFIDENCE auto-rejects are false rejections
-            # without this check (30/65 on the 3639-record evaluation).
-            if not self._entity_in_evidence(evidence_text):
+            # Safety check: if the claim entity name (not the raw_text alias)
+            # appears in the evidence, the mapping may be valid.
+            # Exclude the raw_text from alias matching — it's the very name
+            # that triggered low confidence. e.g., "CagA" matches HGNC alias
+            # "CAGA" for S100A8 but CagA is actually an H. pylori protein.
+            if not self._entity_in_evidence(evidence_text, exclude_raw_text=True):
                 return True, (
                     f'Low-confidence grounding: "{self.raw_text}" mapped to '
                     f'{self.name} (gilda score: {self.gilda_score:.3f} '
@@ -216,8 +217,13 @@ class GroundedEntity:
 
         return False, ""
 
-    def _entity_in_evidence(self, evidence_text: str) -> bool:
-        """Check if the claim entity (or aliases) appears in evidence text."""
+    def _entity_in_evidence(self, evidence_text: str, exclude_raw_text: bool = False) -> bool:
+        """Check if the claim entity (or aliases) appears in evidence text.
+
+        When exclude_raw_text=True, skip aliases that match the raw_text —
+        prevents circular matching where the raw_text that triggered
+        LOW_CONFIDENCE also appears as an HGNC alias (e.g., CagA = CAGA).
+        """
         ev_lower = evidence_text.lower()
         ev_collapsed = ev_lower.replace("-", "").replace(" ", "")
         ce_low = self.name.lower()
@@ -226,9 +232,13 @@ class GroundedEntity:
             return True
 
         # Check aliases
+        rt_low = self.raw_text.lower() if self.raw_text and exclude_raw_text else None
         for alias in self.all_names:
             if len(alias) >= 3:
                 a_low = alias.lower()
+                # Skip aliases that match the raw_text (circular match)
+                if rt_low and a_low == rt_low:
+                    continue
                 if a_low in ev_lower or a_low.replace("-", "").replace(" ", "") in ev_collapsed:
                     return True
 
