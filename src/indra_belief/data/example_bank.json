@@ -1,18 +1,66 @@
 {
-  "Dephosphorylation": [
+  "Activation": [
     {
-      "claim": "PPM1D [Dephosphorylation] BAX",
-      "evidence": "These results show that Wip1 directly interacts with and dephosphorylates BAX.",
+      "claim": "EGFR [Activation] MAPK1",
+      "evidence": "EGF binding to EGFR leads to activation of ERK2 through the Ras-Raf-MEK cascade.",
       "verdict": "correct",
       "confidence": "high",
-      "reason": "Direct statement: Wip1 (=PPM1D) 'dephosphorylates BAX'. Wip1 is a known alias for PPM1D."
+      "reason": "Direct: EGFR activates ERK2 (=MAPK1) through a signaling cascade. Functional activity change."
     },
     {
-      "claim": "ILK [Dephosphorylation] GSK3B",
-      "evidence": "ILK also causes inhibitory phosphorylation of GSK-3beta, a kinase that prevents functional activation of both Snail and beta-catenin.",
+      "claim": "TNF [Activation] TSC1",
+      "evidence": "The difference in the kinetics of TNFalpha induction of pTSC1 (S487) and pTSC1 (S511) implied that these two phosphorylations might be regulated by different kinases.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "The text says ILK causes PHOSPHORYLATION of GSK-3beta, not dephosphorylation. The claim type is inverted \u2014 this is a Phosphorylation, not Dephosphorylation."
+      "reason": "The evidence describes PHOSPHORYLATION of TSC1 at specific sites, not functional activation. 'Induction of pTSC1' = phosphorylation event. This is Phosphorylation, not Activation."
+    }
+  ],
+  "Activation_hypothesis": [
+    {
+      "claim": "IFNA [Activation] NFkappaB",
+      "evidence": "As illustrated in Fig. 2 A, IFN-alpha activated NF-kappaB in a time-dependent manner reaching threefold increase at 120 min.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Direct experimental result with quantitative data: 'IFN-alpha activated NF-kappaB' with measured fold-change."
+    },
+    {
+      "claim": "CCR7 [Activation] AKT",
+      "evidence": "CCR7 may activate Akt and the PI3K and Akt signal pathway to promote cell proliferation and spread.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'May activate' is a hypothesis — the author speculates about a possible mechanism. No experimental evidence that CCR7 activates AKT is presented."
+    }
+  ],
+  "Phosphorylation": [
+    {
+      "claim": "TGFB1 [Phosphorylation] SMAD2",
+      "evidence": "SMAD2 phosphorylation by TGF-beta in villous explants and BeWo cells resulted in a reduction of GCM1 and fusogenic protein syncytin expression.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "'SMAD2 phosphorylation by TGF-beta' directly states the phosphorylation event. The downstream effects (GCM1 reduction) are consequences, not the relationship being claimed."
+    },
+    {
+      "claim": "SGK1 [Phosphorylation] NEDD4L",
+      "evidence": "Moreover, (S422D)SGK1 and SGK3 phosphorylate Nedd4-2.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "The evidence mentions BOTH SGK1 AND SGK3 phosphorylating Nedd4-2. The claim is about SGK1, but the evidence uses a constitutively active MUTANT (S422D)SGK1, and SGK3 also phosphorylates the target — entity boundary confusion."
+    }
+  ],
+  "Complex": [
+    {
+      "claim": "JDP2 [Complex] CDKN2A",
+      "evidence": "JDP2 binds to histones and inhibits the methylation of H3K27 at the p16Ink4a/Arf locus.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "JDP2 acts at the CDKN2A (=p16Ink4a/Arf) locus, involving direct binding interaction. The functional effect (methylation inhibition) follows from the binding."
+    },
+    {
+      "claim": "TNFRSF14 [Complex] CD160",
+      "evidence": "Therefore, we performed a competition assay of CD160 and BTLA binding to HVEM using SPR.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'We performed a competition assay' describes experimental methodology, not a result. The sentence does not assert that TNFRSF14 (=HVEM) and CD160 actually form a complex."
     }
   ],
   "Inhibition": [
@@ -24,11 +72,27 @@
       "reason": "'Blocked Cullin3 driven EMT' = BRMS1 inhibits the activity/function of CUL3. Direct functional inhibition."
     },
     {
-      "claim": "STAT6 [Inhibition] BCL6",
-      "evidence": "pSTAT6 transcriptionally represses BCL6.",
+      "claim": "CDK5RAP3 [Inhibition] CDKN2A",
+      "evidence": "Second, using p14 ARF promoter luciferase reporter assay, we showed that forced expression of CDK5RAP3 repressed the p14 ARF promoter transcriptional activity.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'Transcriptionally represses' = reduces BCL6 mRNA/protein levels. This is DecreaseAmount (expression reduction), not Inhibition (activity suppression)."
+      "reason": "'Repressed the p14 ARF promoter transcriptional activity' = decrease in expression/transcription. This is DecreaseAmount (reducing mRNA/protein levels), not Inhibition (suppressing protein activity). Promoter repression affects amount, not activity."
+    }
+  ],
+  "Inhibition_act_vs_amt": [
+    {
+      "claim": "ROBO1 [Inhibition] SRC",
+      "evidence": "Supporting our hypothesis, we observed that Slit2 and Robo1 inhibited the M-gp120-induced activation of c-Src.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "'Inhibited the activation of c-Src' = direct suppression of SRC kinase activity. This is functional Inhibition, not expression change."
+    },
+    {
+      "claim": "SOCS3 [Inhibition] TNFRSF1B",
+      "evidence": "The current study tested the hypothesis that SOCS3 over-expression limits the cytokine induction of TNFR2 and/or growth promoting effects of TNFR2.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'Limits the cytokine induction of TNFR2' = reduces TNFR2 expression levels. This is DecreaseAmount, not Inhibition. Additionally, 'tested the hypothesis' means this is not a confirmed result."
     }
   ],
   "IncreaseAmount": [
@@ -44,7 +108,7 @@
       "evidence": "Overexpression of Sumo1 specific proteases Senp1 upregulated Prdx6 and Sp1 expression.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "Senp1 (a SUMO protease that removes SUMO1) upregulated SP1 \u2014 not SUMO1 itself. The agent is Senp1, not SUMO1."
+      "reason": "Senp1 (a SUMO protease that removes SUMO1) upregulated SP1 — not SUMO1 itself. The agent is Senp1, not SUMO1."
     }
   ],
   "DecreaseAmount": [
@@ -60,7 +124,23 @@
       "evidence": "In vitro transient KD of FGFR2 decreased CD44 and EpCAM protein levels.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "Knockdown (KD) of FGFR2 decreased EpCAM \u2014 logical inversion. FGFR2 normally INCREASES EpCAM; losing FGFR2 decreases it. The claim should be IncreaseAmount, not DecreaseAmount."
+      "reason": "Knockdown (KD) of FGFR2 decreased EpCAM — logical inversion. FGFR2 normally INCREASES EpCAM; losing FGFR2 decreases it. The claim should be IncreaseAmount, not DecreaseAmount."
+    }
+  ],
+  "Dephosphorylation": [
+    {
+      "claim": "PPM1D [Dephosphorylation] BAX",
+      "evidence": "These results show that Wip1 directly interacts with and dephosphorylates BAX.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Direct statement: Wip1 (=PPM1D) 'dephosphorylates BAX'. Wip1 is a known alias for PPM1D."
+    },
+    {
+      "claim": "ILK [Dephosphorylation] GSK3B",
+      "evidence": "ILK also causes inhibitory phosphorylation of GSK-3beta, a kinase that prevents functional activation of both Snail and beta-catenin.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "The text says ILK causes PHOSPHORYLATION of GSK-3beta, not dephosphorylation. The claim type is inverted — this is a Phosphorylation, not Dephosphorylation."
     }
   ],
   "Autophosphorylation": [
@@ -92,7 +172,7 @@
       "evidence": "It has been proposed that Bax does not translocate to mitochondria under normal physiological conditions, due to interaction with Bcl-xL.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'Does not translocate' \u2014 negative result. The evidence explicitly states translocation does NOT occur under these conditions."
+      "reason": "'Does not translocate' — negative result. The evidence explicitly states translocation does NOT occur under these conditions."
     }
   ],
   "Ubiquitination": [
@@ -108,7 +188,7 @@
       "evidence": "First, we examined whether purified RAD18 and RAD6 complex could ubiquitinate 53BP1 in vitro using the purified HA tagged full-length 53BP1.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'We examined whether...could ubiquitinate' \u2014 this is an experimental question, not a result. The sentence does not assert that ubiquitination occurred."
+      "reason": "'We examined whether...could ubiquitinate' — this is an experimental question, not a result. The sentence does not assert that ubiquitination occurred."
     }
   ]
 }

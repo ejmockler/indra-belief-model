@@ -1,14 +1,13 @@
 """Evidence quality scorer using native INDRA objects.
 
-Three-tier architecture:
+Two-tier architecture:
   Tier 1: Deterministic grounding check (GroundedEntity.should_auto_reject)
     - MISMATCH → auto-reject
-    - LOW_CONFIDENCE (gilda score ≤ 0.53) → auto-reject
     - PSEUDOGENE + AMBIGUOUS → auto-reject
     - AMBIGUOUS → LLM judges with grounding context
   Tier 2: LLM text comprehension
-    - v8 system prompt + Rule 7 (provenance) + contrastive examples
-    - Entity context, provenance, directness from ScoringRecord
+    - v8 system prompt + adaptive contrastive examples
+    - Entity context from ScoringRecord
 
 Run:
     PYTHONPATH=src python -m indra_belief.scorers.scorer
@@ -33,28 +32,35 @@ from indra_belief.scorers.evidence_scorer import (
 
 ROOT = Path(__file__).resolve().parents[3]
 
-_PROVENANCE_RULE = """
-7. PROVENANCE: If "Extraction provenance" is shown, it reveals what the NLP
-   reader actually extracted from the sentence and how entities were mapped
-   to gene symbols. Pay attention to:
-   - MISMATCH: the extracted text refers to a DIFFERENT entity than the claim
-   - AMBIGUOUS: the extracted text may refer to a different protein
-   - LOW CONFIDENCE: the automated mapping is uncertain; verify carefully
-   These signals indicate the text-mining system may have grounded incorrectly.
-"""
-
-SYSTEM_PROMPT = _V8_SYSTEM_PROMPT.rstrip() + "\n" + _PROVENANCE_RULE
+# Provenance rule removed — provenance injection disabled at scale
+# (72.2% accuracy when triggered vs 78.9% baseline). The LLM performs
+# worse when given extraction provenance signals.
+SYSTEM_PROMPT = _V8_SYSTEM_PROMPT
 
 # --- Adaptive few-shot selection ---
-# Same budget as v8 (9 pairs = 18 examples), but content tailored to
-# the record's statement type: own type + adjacent types + universals.
+# Reduced budget (7 pairs = 14 examples) with better type targeting.
+# 9 pairs (66% of tokens) was diluting attention; 7 pairs frees ~20%
+# of context for the model's own reasoning while being more relevant.
 
 # Type-specific example bank (loaded from JSON)
+# Bank keys can be exact types ("Activation") or sub-keys ("Activation_no_relation")
 _EXAMPLE_BANK_PATH = Path(__file__).parent.parent / "data" / "example_bank.json"
-_TYPE_BANK: dict[str, list[dict]] = {}
+_RAW_BANK: dict[str, list[dict]] = {}
 if _EXAMPLE_BANK_PATH.exists():
     with open(_EXAMPLE_BANK_PATH) as _f:
-        _TYPE_BANK = json.load(_f)
+        _RAW_BANK = json.load(_f)
+
+# Build type → list of pairs mapping from bank
+# Keys like "Activation_no_relation" contribute to "Activation"
+_TYPE_BANK: dict[str, list[list[dict]]] = {}
+for key, pair in _RAW_BANK.items():
+    base_type = key.split("_")[0] if "_" in key else key
+    # Handle types that contain underscores in their names
+    if base_type in ("IncreaseAmount", "DecreaseAmount"):
+        base_type = key  # these ARE the type names
+    elif key.startswith("Increase") or key.startswith("Decrease"):
+        base_type = key.split("_")[0] + key.split("_")[1] if "_" in key and key.count("_") > 1 else key
+    _TYPE_BANK.setdefault(base_type, []).append(pair)
 
 # Map v8 examples into pairs by their statement type
 _V8_PAIRS: dict[str, list[list[dict]]] = {}
@@ -62,11 +68,10 @@ for i in range(0, len(_ALL_EXAMPLES), 2):
     stype = _ALL_EXAMPLES[i]["claim"].split("[")[1].split("]")[0].strip()
     _V8_PAIRS.setdefault(stype, []).append([_ALL_EXAMPLES[i], _ALL_EXAMPLES[i + 1]])
 
-# Universal pairs (indices into _ALL_EXAMPLES — patterns that apply to all types)
+# Universal pairs — patterns that apply to all statement types
 _UNIVERSAL_PAIRS = [
     _ALL_EXAMPLES[4:6],    # Pair 3: logical inversion (AGER/MMP2, TP53/MDM2)
     _ALL_EXAMPLES[6:8],    # Pair 4: hedging scope (MYB/PPID)
-    _ALL_EXAMPLES[12:14],  # Pair 7: parallel activation / third-party agent
 ]
 
 # Which types are commonly confused with each other?
@@ -84,16 +89,16 @@ _TYPE_ADJACENCY = {
     "Acetylation": ["Deacetylation"],
 }
 
-TARGET_PAIRS = 9  # same budget as v8
+TARGET_PAIRS = 7  # reduced from 9 — frees ~20% attention for reasoning
 
 
 def _select_examples(stmt_type: str) -> list[dict]:
-    """Select 9 contrastive pairs (18 examples) for a record's statement type.
+    """Select 7 contrastive pairs (14 examples) for a record's statement type.
 
     Priority:
-    1. Own type pair(s) — from bank and/or v8
+    1. Own type pair(s) — from bank (may have multiple sub-keys) and/or v8
     2. Adjacent type pairs — types commonly confused with this one
-    3. Universal patterns — hedging, logical inversion, parallel activation
+    3. Universal patterns — logical inversion, hedging scope
     4. Fill from remaining v8 pairs
     """
     selected: list[list[dict]] = []
@@ -107,10 +112,9 @@ def _select_examples(stmt_type: str) -> list[dict]:
         used_claims.add(key)
         return True
 
-    # 1. Own type from bank
-    if stmt_type in _TYPE_BANK:
-        bank_exs = _TYPE_BANK[stmt_type]
-        _add_pair(bank_exs)  # bank pairs are [correct, incorrect]
+    # 1. Own type from bank (may have multiple pairs from sub-keys)
+    for pair in _TYPE_BANK.get(stmt_type, []):
+        _add_pair(pair)
 
     # 1b. Own type from v8
     for pair in _V8_PAIRS.get(stmt_type, []):
@@ -118,8 +122,8 @@ def _select_examples(stmt_type: str) -> list[dict]:
 
     # 2. Adjacent types
     for adj_type in _TYPE_ADJACENCY.get(stmt_type, []):
-        if adj_type in _TYPE_BANK:
-            _add_pair(_TYPE_BANK[adj_type])
+        for pair in _TYPE_BANK.get(adj_type, []):
+            _add_pair(pair)
         for pair in _V8_PAIRS.get(adj_type, []):
             _add_pair(pair)
 
@@ -138,8 +142,50 @@ def _select_examples(stmt_type: str) -> list[dict]:
     return examples
 
 
-def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) -> dict:
+def _score_single(
+    client: ModelClient,
+    record: ScoringRecord,
+    max_tokens: int,
+    temperature: float = 0.1,
+) -> dict:
+    """Single LLM call for Tier 2. Returns result dict."""
+    user_msg = record.format_user_message()
+
+    examples = _select_examples(record.stmt_type)
+    messages = []
+    for ex in examples:
+        u, a = _render_example(ex)
+        messages.append({"role": "user", "content": u})
+        messages.append({"role": "assistant", "content": a})
+    messages.append({"role": "user", "content": user_msg})
+
+    response = client.call(
+        system=SYSTEM_PROMPT,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    verdict, confidence = extract_verdict(response.raw_text)
+    return {
+        "verdict": verdict,
+        "confidence": confidence,
+        "raw_text": response.raw_text,
+        "tokens": response.tokens,
+    }
+
+
+def score(
+    client: ModelClient,
+    record: ScoringRecord,
+    max_tokens: int = 4000,
+    voting_k: int = 1,
+) -> dict:
     """Score a single extraction.
+
+    Args:
+        voting_k: Number of independent samples for self-consistency voting.
+            k=1 (default) is a single call. k=3 or k=5 uses majority voting
+            with temperature=0.6 for diversity.
 
     Returns dict with: score, verdict, confidence, raw_text, tokens,
     tier, grounding_status, provenance_triggered.
@@ -154,26 +200,54 @@ def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) ->
     # an extra LLM call that primed the model with grounding-focused evaluation
     # before the comprehension evaluation.
 
-    # --- Tier 2: LLM text comprehension ---
-    user_msg = record.format_user_message()
     provenance_triggered = bool(record.format_provenance())
 
-    # Adaptive few-shot: core examples + type-matched pair
-    examples = _select_examples(record.stmt_type)
+    # --- Tier 2: LLM text comprehension ---
+    if voting_k <= 1:
+        result = _score_single(client, record, max_tokens)
+        verdict = result["verdict"]
+        confidence = result["confidence"]
+        total_tokens = result["tokens"]
+        raw = f"[TIER 2 LLM]\n{result['raw_text']}"
+        tier = "llm_comprehension"
+    else:
+        # Self-consistency voting: k independent samples at higher temperature
+        votes = []
+        total_tokens = 0
+        raw_parts = []
+        for i in range(voting_k):
+            r = _score_single(client, record, max_tokens, temperature=0.6)
+            total_tokens += r["tokens"]
+            raw_parts.append(f"[VOTE {i+1}] {r['verdict']}({r['confidence']})")
+            if r["verdict"]:
+                votes.append(r["verdict"])
 
-    messages = []
-    for ex in examples:
-        u, a = _render_example(ex)
-        messages.append({"role": "user", "content": u})
-        messages.append({"role": "assistant", "content": a})
-    messages.append({"role": "user", "content": user_msg})
+        # Majority vote
+        correct_votes = sum(1 for v in votes if v == "correct")
+        incorrect_votes = sum(1 for v in votes if v == "incorrect")
 
-    response = client.call(
-        system=SYSTEM_PROMPT,
-        messages=messages,
-        max_tokens=max_tokens,
-    )
-    verdict, confidence = extract_verdict(response.raw_text)
+        if correct_votes > incorrect_votes:
+            verdict = "correct"
+        elif incorrect_votes > correct_votes:
+            verdict = "incorrect"
+        else:
+            verdict = votes[0] if votes else None  # tie → first vote
+
+        # Confidence from agreement level
+        total_votes = correct_votes + incorrect_votes
+        if total_votes > 0:
+            agreement = max(correct_votes, incorrect_votes) / total_votes
+            if agreement >= 0.8:
+                confidence = "high"
+            elif agreement >= 0.6:
+                confidence = "medium"
+            else:
+                confidence = "low"
+        else:
+            confidence = None
+
+        raw = " | ".join(raw_parts)
+        tier = f"llm_voting_k{voting_k}"
 
     # Determine grounding status
     if any(e.has_grounding_signal for e in (record.subject_entity, record.object_entity) if e):
@@ -185,9 +259,9 @@ def score(client: ModelClient, record: ScoringRecord, max_tokens: int = 4000) ->
         "score": verdict_to_score(verdict, confidence),
         "verdict": verdict,
         "confidence": confidence,
-        "raw_text": f"[TIER 2 LLM]\n{response.raw_text}",
-        "tokens": response.tokens,
-        "tier": "llm_comprehension",
+        "raw_text": raw,
+        "tokens": total_tokens,
+        "tier": tier,
         "grounding_status": grounding_status,
         "provenance_triggered": provenance_triggered,
     }
@@ -201,7 +275,11 @@ def main():
     parser.add_argument("--holdout", default=str(ROOT / "data" / "benchmark" / "holdout.jsonl"))
     parser.add_argument("--output", default=str(ROOT / "data" / "results" / "v11_native.jsonl"))
     parser.add_argument("--max-tokens", type=int, default=4000)
+    parser.add_argument("--voting-k", type=int, default=1,
+                        help="Self-consistency voting: k independent samples (1=single call)")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from existing output file (skip scored records)")
     args = parser.parse_args()
 
     # Load corpus and build records
@@ -210,13 +288,29 @@ def main():
     if args.limit:
         records = records[:args.limit]
 
-    print(f"\nScorer: {len(records)} records, model={args.model}")
+    # Resume support: skip already-scored records
+    scored_hashes = set()
+    if args.resume:
+        resume_path = Path(args.resume)
+        if resume_path.exists():
+            with open(resume_path) as f:
+                for line in f:
+                    try:
+                        r = json.loads(line)
+                        scored_hashes.add(r.get("source_hash"))
+                    except json.JSONDecodeError:
+                        pass
+            print(f"Resuming: {len(scored_hashes)} records already scored")
+
+    voting_label = f", voting_k={args.voting_k}" if args.voting_k > 1 else ""
+    print(f"\nScorer: {len(records)} records, model={args.model}{voting_label}")
 
     client = ModelClient(args.model)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    out_fh = open(output_path, "w")
+    mode = "a" if args.resume else "w"
+    out_fh = open(output_path, mode)
 
     correct = 0
     total_parsed = 0
@@ -224,7 +318,10 @@ def main():
     t_start = time.time()
 
     for i, record in enumerate(records):
-        result = score(client, record, args.max_tokens)
+        if record.source_hash in scored_hashes:
+            continue
+
+        result = score(client, record, args.max_tokens, voting_k=args.voting_k)
 
         gt_correct = record.tag == "correct"
         llm_correct = (result["verdict"] == "correct") if result["verdict"] else None
@@ -254,9 +351,7 @@ def main():
         mark = "✓" if (llm_correct == gt_correct) else ("✗" if llm_correct is not None else "?")
         tier_short = {
             "deterministic_mismatch": "T1:MSMATCH",
-            "deterministic_low_confidence": "T1:LOWCONF",
             "deterministic_pseudogene": "T1:PSEUDO",
-            "ambiguous_rejected": "T1:AMBIG_R",
             "ambiguous_then_llm": "T1→T2",
             "llm_comprehension": "T2:LLM",
         }.get(tier, tier)

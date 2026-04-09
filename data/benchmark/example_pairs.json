@@ -1,110 +1,38 @@
 [
-  [
-    "AGER",
-    "MMP2"
-  ],
-  [
-    "AKT",
-    "CASP3"
-  ],
-  [
-    "ATM",
-    "ATM"
-  ],
-  [
-    "AURKB",
-    "ATXN10"
-  ],
-  [
-    "Actin",
-    "CDK9"
-  ],
-  [
-    "BAX",
-    "BAX"
-  ],
-  [
-    "BRMS1",
-    "CUL3"
-  ],
-  [
-    "ERK5",
-    "ERK5"
-  ],
-  [
-    "FGFR2",
-    "EPCAM"
-  ],
-  [
-    "HIF1A",
-    "TP53"
-  ],
-  [
-    "HSP90",
-    "IRF3"
-  ],
-  [
-    "IFNA",
-    "NFkappaB"
-  ],
-  [
-    "IL1",
-    "IL6"
-  ],
-  [
-    "ILK",
-    "GSK3B"
-  ],
-  [
-    "MMP14",
-    "SPRY4"
-  ],
-  [
-    "MTOR",
-    "RPS6KB1"
-  ],
-  [
-    "MYB",
-    "PPID"
-  ],
-  [
-    "P70S6K",
-    "RPS6"
-  ],
-  [
-    "PPM1D",
-    "BAX"
-  ],
-  [
-    "Proteasome",
-    "ESR1"
-  ],
-  [
-    "RAD18",
-    "TP53BP1"
-  ],
-  [
-    "ROBO1",
-    "SRC"
-  ],
-  [
-    "STAT6",
-    "BCL6"
-  ],
-  [
-    "SUMO1",
-    "SP1"
-  ],
-  [
-    "TGFB1",
-    "ADAM17"
-  ],
-  [
-    "TNFSF10",
-    "CASP8"
-  ],
-  [
-    "TP53",
-    "MDM2"
-  ]
+  ["AGER", "MMP2"],
+  ["AKT", "CASP3"],
+  ["ATM", "ATM"],
+  ["AURKB", "ATXN10"],
+  ["Actin", "CDK9"],
+  ["BAX", "BAX"],
+  ["BRMS1", "CUL3"],
+  ["CCR7", "AKT"],
+  ["CDK5RAP3", "CDKN2A"],
+  ["EGFR", "MAPK1"],
+  ["ERK5", "ERK5"],
+  ["FGFR2", "EPCAM"],
+  ["HIF1A", "TP53"],
+  ["HSP90", "IRF3"],
+  ["IFNA", "NFkappaB"],
+  ["IL1", "IL6"],
+  ["ILK", "GSK3B"],
+  ["JDP2", "CDKN2A"],
+  ["MMP14", "SPRY4"],
+  ["MTOR", "RPS6KB1"],
+  ["MYB", "PPID"],
+  ["P70S6K", "RPS6"],
+  ["PPM1D", "BAX"],
+  ["Proteasome", "ESR1"],
+  ["RAD18", "TP53BP1"],
+  ["ROBO1", "SRC"],
+  ["SGK1", "NEDD4L"],
+  ["SOCS3", "TNFRSF1B"],
+  ["STAT6", "BCL6"],
+  ["SUMO1", "SP1"],
+  ["TGFB1", "ADAM17"],
+  ["TGFB1", "SMAD2"],
+  ["TNF", "TSC1"],
+  ["TNFRSF14", "CD160"],
+  ["TNFSF10", "CASP8"],
+  ["TP53", "MDM2"]
 ]

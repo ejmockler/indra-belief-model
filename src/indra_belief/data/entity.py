@@ -199,18 +199,11 @@ class GroundedEntity:
             if not self._entity_in_evidence(evidence_text):
                 return True, f"Grounding mismatch: {self.verification_note}"
 
-        if self.verification_status == "MATCH" and self.is_low_confidence:
-            # Safety check: if the claim entity name (not the raw_text alias)
-            # appears in the evidence, the mapping may be valid.
-            # Exclude the raw_text from alias matching — it's the very name
-            # that triggered low confidence. e.g., "CagA" matches HGNC alias
-            # "CAGA" for S100A8 but CagA is actually an H. pylori protein.
-            if not self._entity_in_evidence(evidence_text, exclude_raw_text=True):
-                return True, (
-                    f'Low-confidence grounding: "{self.raw_text}" mapped to '
-                    f'{self.name} (gilda score: {self.gilda_score:.3f} '
-                    f'— below confidence threshold)'
-                )
+        # LOW_CONFIDENCE auto-reject disabled: 53.6% precision at scale
+        # (37 true / 32 false rejections on 3754 records). The LLM handles
+        # these records at ~79% accuracy, so letting them through is net positive.
+        # The low_confidence signal is still available in format_warning() for
+        # the LLM to consider as context if needed.
 
         if self.verification_status == "AMBIGUOUS" and self.is_pseudogene:
             return True, f"Pseudogene mapping: {self.name} is a pseudogene. {self.verification_note}"

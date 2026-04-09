@@ -269,9 +269,9 @@ class ScoringRecord:
         if entity_ctx:
             parts.append(entity_ctx)
 
-        provenance = self.format_provenance()
-        if provenance:
-            parts.append(provenance)
+        # Provenance injection disabled — at scale it hurts accuracy by 6.7pp
+        # (72.2% when triggered vs 78.9% baseline on 3754 records). The LLM
+        # performs worse when given extraction provenance signals.
 
         # [indirect evidence] marker removed — at scale it causes 5pp higher
         # FN rate (22% vs 17%) by prejudicing the model toward rejection.
@@ -291,9 +291,7 @@ class ScoringRecord:
             reject, reason = entity.should_auto_reject(self.evidence_text)
             if reject:
                 tier = "deterministic_mismatch"
-                if entity.is_low_confidence:
-                    tier = "deterministic_low_confidence"
-                elif entity.is_pseudogene:
+                if entity.is_pseudogene:
                     tier = "deterministic_pseudogene"
                 return {
                     "score": 0.05,
