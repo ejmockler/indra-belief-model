@@ -210,6 +210,12 @@ JSON_VERDICT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Also match when confidence comes before verdict
+JSON_VERDICT_PATTERN_REV = re.compile(
+    r'\{[^{}]*?"confidence"\s*:\s*"(high|medium|low)"[^{}]*?"verdict"\s*:\s*"(correct|incorrect)"[^{}]*?\}',
+    re.IGNORECASE,
+)
+
 
 def _render_example(ex: dict) -> tuple[str, str]:
     user = f"CLAIM: {ex['claim']}\nEVIDENCE: \"{ex['evidence']}\""
@@ -225,6 +231,16 @@ def extract_verdict(text: str) -> tuple[str | None, str | None]:
     if matches:
         v, c = matches[-1]
         return v.lower(), c.lower()
+    # Try reversed field order
+    matches = JSON_VERDICT_PATTERN_REV.findall(text)
+    if matches:
+        c, v = matches[-1]
+        return v.lower(), c.lower()
+    # Last resort: just find verdict anywhere
+    import re
+    m = re.search(r'"verdict"\s*:\s*"(correct|incorrect)"', text, re.IGNORECASE)
+    if m:
+        return m.group(1).lower(), "medium"
     return None, None
 
 
