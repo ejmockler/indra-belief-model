@@ -5,6 +5,7 @@ from indra_belief.noise_model import (
     compute_edge_reliability_with_contradiction,
     compute_gated_belief,
     INDRA_PRIORS,
+    RECALIBRATED_PRIORS,
 )
 
 
@@ -54,6 +55,37 @@ class TestComputeEdgeReliability:
         expected = 1.0 - (syst + rand ** 3)  # additive, 3 evidence
         actual = compute_edge_reliability(["reach"], 3)
         assert actual == pytest.approx(expected, abs=1e-10)
+
+
+class TestRecalibratedPriors:
+    """Tests for benchmark-derived priors."""
+
+    def test_recalibrated_reach_lower_belief(self):
+        """REACH is worse than INDRA defaults (48.8% vs 65% accuracy)."""
+        b_default = compute_edge_reliability(["reach"], 1, priors=INDRA_PRIORS)
+        b_recal = compute_edge_reliability(["reach"], 1, priors=RECALIBRATED_PRIORS)
+        assert b_recal < b_default
+
+    def test_recalibrated_trips_higher_belief(self):
+        """TRIPS is better than INDRA defaults (87.3% vs 65% accuracy)."""
+        b_default = compute_edge_reliability(["trips"], 1, priors=INDRA_PRIORS)
+        b_recal = compute_edge_reliability(["trips"], 1, priors=RECALIBRATED_PRIORS)
+        assert b_recal > b_default
+
+    def test_recalibrated_signor_unchanged(self):
+        """Signor has too few benchmark records — keeps INDRA defaults."""
+        b_default = compute_edge_reliability(["signor"], 1, priors=INDRA_PRIORS)
+        b_recal = compute_edge_reliability(["signor"], 1, priors=RECALIBRATED_PRIORS)
+        assert b_default == pytest.approx(b_recal)
+
+    def test_recalibrated_priors_bounded(self):
+        """All recalibrated rand values produce valid beliefs."""
+        for src, (rand, syst) in RECALIBRATED_PRIORS.items():
+            assert 0.0 < rand < 1.0, f"{src}: rand={rand}"
+            assert 0.0 < syst < 1.0, f"{src}: syst={syst}"
+            assert syst + rand <= 1.0, f"{src}: syst+rand={syst+rand} > 1.0"
+            b = compute_edge_reliability([src], 1, priors=RECALIBRATED_PRIORS)
+            assert 0.0 < b < 1.0, f"{src}: belief={b}"
 
 
 class TestEdgeReliabilityWithContradiction:

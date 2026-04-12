@@ -45,6 +45,37 @@ INDRA_PRIORS: dict[str, tuple[float, float]] = {
 _DEFAULT_PRIOR = (0.30, 0.10)
 
 
+# Recalibrated priors from 9,342-record INDRA assembly curation benchmark
+# (April 2026). Derived as rand = 1 - accuracy - syst per source.
+# Only sources with n >= 100 are recalibrated; others keep INDRA defaults.
+# Sources not in benchmark keep INDRA defaults via fallback.
+RECALIBRATED_PRIORS: dict[str, tuple[float, float]] = {
+    # Major text-mining readers (n >= 1000)
+    "reach": (0.462, 0.05),       # n=3802, acc=0.488 (was 0.30)
+    "sparser": (0.516, 0.05),     # n=1830, acc=0.434 (was 0.30)
+    "trips": (0.077, 0.05),       # n=1484, acc=0.873 (was 0.30)
+    "medscan": (0.481, 0.05),     # n=1161, acc=0.469 (was 0.30)
+    # Medium-sample readers (n >= 100)
+    "rlimsp": (0.056, 0.05),      # n=995, acc=0.894 (was 0.20)
+    # Small-sample sources (n < 100) — keep INDRA defaults
+    "signor": (0.049, 0.01),      # n=27 (unchanged)
+    "hprd": (0.01, 0.01),         # n=8 (unchanged)
+    # Curated databases — no benchmark data, keep INDRA defaults
+    "biogrid": (0.01, 0.01),
+    "phosphosite": (0.01, 0.01),
+    "cbn": (0.01, 0.01),
+    "trrust": (0.10, 0.01),
+    "tas": (0.01, 0.01),
+    "pid": (0.01, 0.01),
+    "reactome": (0.01, 0.01),
+    "kegg": (0.01, 0.01),
+    "drugbank": (0.01, 0.01),
+    # Other text-mining (no benchmark data, keep defaults)
+    "eidos": (0.30, 0.05),
+    "cwms": (0.30, 0.05),
+}
+
+
 def compute_edge_reliability(
     sources: list[str],
     evidence_count: int,
