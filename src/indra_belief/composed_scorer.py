@@ -20,6 +20,7 @@ from indra_belief.noise_model import (
     RECALIBRATED_PRIORS,
     GatedBeliefResult,
     compute_gated_belief,
+    compute_gated_belief_with_contradiction,
     compute_edge_reliability,
     compute_edge_reliability_with_contradiction,
 )
@@ -137,8 +138,10 @@ class ComposedBeliefScorer:
     ) -> tuple[ComposedScore, str, bool]:
         """Score an edge with contradiction penalty.
 
-        Groups evidence by regulation_type, scores each direction,
-        then applies: belief = belief_dominant * (1 - belief_opposing).
+        Delegates to compute_gated_belief_with_contradiction in the noise
+        model, which groups by regulation_type, scores each direction via
+        compute_gated_belief, and applies:
+            belief = belief_dominant * (1 - belief_opposing).
 
         Returns:
             (ComposedScore, dominant_direction, is_contradictory)
@@ -147,46 +150,28 @@ class ComposedBeliefScorer:
             empty = self.score_edge([])
             return empty, "unknown", False
 
-        # Group by regulation_type
-        by_direction: dict[str, list[EvidenceRecord]] = {}
-        for r in evidence:
-            d = r.regulation_type or "unknown"
-            by_direction.setdefault(d, []).append(r)
+        has_llm = any(r.verdict is not None for r in evidence)
 
-        # Score each direction independently
-        dir_scores: dict[str, ComposedScore] = {}
-        for direction, dir_evidence in by_direction.items():
-            dir_scores[direction] = self.score_edge(dir_evidence)
+        # Build evidence dicts with gating + regulation_type for noise model
+        gated_evidence = [
+            {
+                "source_api": r.source_api,
+                "included": self._should_include(r),
+                "regulation_type": r.regulation_type or "unknown",
+            }
+            for r in evidence
+        ]
 
-        if not dir_scores:
-            empty = self.score_edge([])
-            return empty, "unknown", False
+        result, dominant_dir, is_contradictory = (
+            compute_gated_belief_with_contradiction(gated_evidence, priors=self.priors)
+        )
 
-        # Find dominant direction
-        dominant_dir = max(dir_scores, key=lambda d: dir_scores[d].belief)
-        dominant = dir_scores[dominant_dir]
-
-        # Check for contradiction
-        opposing = {
-            d: s for d, s in dir_scores.items()
-            if d != dominant_dir and d != "unknown"
-        }
-        if opposing:
-            opposing_belief = max(s.belief for s in opposing.values())
-            penalized_belief = dominant.belief * (1.0 - opposing_belief)
-
-            # Build a combined score
-            all_evidence = [r for records in by_direction.values() for r in records]
-            combined = self.score_edge(all_evidence)
-
-            return ComposedScore(
-                belief=penalized_belief,
-                parametric_only=combined.parametric_only,
-                n_total=combined.n_total,
-                n_surviving=combined.n_surviving,
-                n_gated=combined.n_gated,
-                gated_result=combined.gated_result,
-                has_llm_scores=combined.has_llm_scores,
-            ), dominant_dir, True
-
-        return dominant, dominant_dir, False
+        return ComposedScore(
+            belief=result.belief,
+            parametric_only=result.parametric_only,
+            n_total=result.n_total_evidence,
+            n_surviving=result.n_surviving_evidence,
+            n_gated=result.n_gated,
+            gated_result=result,
+            has_llm_scores=has_llm,
+        ), dominant_dir, is_contradictory

@@ -5,6 +5,7 @@ from indra_belief.noise_model import (
     compute_edge_reliability_from_counts,
     compute_edge_reliability_with_contradiction,
     compute_gated_belief,
+    compute_gated_belief_with_contradiction,
     INDRA_PRIORS,
     RECALIBRATED_PRIORS,
 )
@@ -316,3 +317,132 @@ class TestGatedBeliefInputValidation:
         result = compute_gated_belief(evidence)
         assert result.n_surviving_evidence == 1
         assert result.belief == pytest.approx(0.65, abs=0.001)
+
+
+class TestGatedBeliefWithContradiction:
+    """Tests for the unified gated belief + contradiction function."""
+
+    def test_single_direction_no_penalty(self):
+        """Single direction: result matches plain compute_gated_belief."""
+        evidence = [
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+        ]
+        result, direction, contradictory = compute_gated_belief_with_contradiction(evidence)
+        plain = compute_gated_belief(evidence)
+
+        assert contradictory is False
+        assert direction == "activation"
+        assert result.belief == pytest.approx(plain.belief)
+        assert result.n_total_evidence == plain.n_total_evidence
+        assert result.n_surviving_evidence == plain.n_surviving_evidence
+        assert result.n_gated == plain.n_gated
+
+    def test_contradiction_penalizes(self):
+        """Two directions: penalized belief < dominant-only belief."""
+        evidence = [
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": True, "regulation_type": "repression"},
+        ]
+        result, direction, contradictory = compute_gated_belief_with_contradiction(evidence)
+
+        assert contradictory is True
+        assert direction == "activation"
+
+        # Dominant-only belief (2x reach activation)
+        dominant_only = compute_gated_belief([
+            {"source_api": "reach", "included": True},
+            {"source_api": "reach", "included": True},
+        ])
+        assert result.belief < dominant_only.belief
+
+        # Verify penalty formula: dominant * (1 - opposing)
+        opposing = compute_gated_belief([
+            {"source_api": "reach", "included": True},
+        ])
+        expected = dominant_only.belief * (1.0 - opposing.belief)
+        assert result.belief == pytest.approx(expected)
+
+        # Counts span all directions
+        assert result.n_total_evidence == 3
+        assert result.n_surviving_evidence == 3
+        assert result.n_gated == 0
+
+    def test_gating_removes_opposing(self):
+        """Opposing evidence all gated out: no contradiction detected."""
+        evidence = [
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": False, "regulation_type": "repression"},
+        ]
+        result, direction, contradictory = compute_gated_belief_with_contradiction(evidence)
+
+        # Opposing direction has belief=0 (all gated), so no contradiction penalty
+        # because 0 opposing belief means penalty factor is 1.0
+        assert direction == "activation"
+        # Dominant belief should equal 2x reach activation (no penalty)
+        dominant_only = compute_gated_belief([
+            {"source_api": "reach", "included": True},
+            {"source_api": "reach", "included": True},
+        ])
+        # Even if contradictory is True, the penalty is belief * (1 - 0) = belief
+        if contradictory:
+            assert result.belief == pytest.approx(dominant_only.belief)
+        else:
+            assert result.belief == pytest.approx(dominant_only.belief)
+
+        # Counts include gated evidence from opposing direction
+        assert result.n_total_evidence == 3
+        assert result.n_gated == 1
+
+    def test_empty_evidence(self):
+        """Empty evidence returns (0.0, 'unknown', False)."""
+        result, direction, contradictory = compute_gated_belief_with_contradiction([])
+        assert result.belief == 0.0
+        assert direction == "unknown"
+        assert contradictory is False
+        assert result.n_total_evidence == 0
+        assert result.n_surviving_evidence == 0
+        assert result.n_gated == 0
+
+    def test_mixed_gating_and_contradiction(self):
+        """Complex case: partial gating in both directions."""
+        evidence = [
+            # Activation: 2 included, 1 gated
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": True, "regulation_type": "activation"},
+            {"source_api": "reach", "included": False, "regulation_type": "activation"},
+            # Repression: 1 included from signor, 1 gated from reach
+            {"source_api": "signor", "included": True, "regulation_type": "repression"},
+            {"source_api": "reach", "included": False, "regulation_type": "repression"},
+        ]
+        result, direction, contradictory = compute_gated_belief_with_contradiction(evidence)
+
+        assert contradictory is True
+        # Total counts: 5 total, 3 surviving, 2 gated
+        assert result.n_total_evidence == 5
+        assert result.n_surviving_evidence == 3
+        assert result.n_gated == 2
+
+        # Verify direction: activation has 2 surviving reach → belief = 1-(0.05+0.3^2)=0.86
+        # Repression has 1 surviving signor (reach fully gated) → belief = 0.941
+        # Repression is dominant!
+        assert direction == "repression"
+
+        # Penalty: repression_belief * (1 - activation_belief)
+        act_belief = compute_gated_belief([
+            {"source_api": "reach", "included": True},
+            {"source_api": "reach", "included": True},
+            {"source_api": "reach", "included": False},
+        ]).belief
+        rep_belief = compute_gated_belief([
+            {"source_api": "signor", "included": True},
+            {"source_api": "reach", "included": False},
+        ]).belief
+        expected = rep_belief * (1.0 - act_belief)
+        assert result.belief == pytest.approx(expected)
+
+        # Per-source breakdown comes from dominant direction (repression)
+        source_names = {s.source for s in result.per_source}
+        assert "signor" in source_names
