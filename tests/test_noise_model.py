@@ -2,6 +2,7 @@
 import pytest
 from indra_belief.noise_model import (
     compute_edge_reliability,
+    compute_edge_reliability_from_counts,
     compute_edge_reliability_with_contradiction,
     compute_gated_belief,
     INDRA_PRIORS,
@@ -240,3 +241,78 @@ class TestGatedBelief:
                 result = compute_gated_belief(evidence)
                 assert 0.0 <= result.belief <= 1.0
                 assert 0.0 <= result.parametric_only <= 1.0
+
+
+class TestComputeEdgeReliabilityFromCounts:
+    """Tests for the dict-based edge reliability API."""
+
+    def test_from_counts_matches_list_api(self):
+        """Dict API and list API produce identical results for equivalent inputs."""
+        # Single source, 3 evidence
+        b_list = compute_edge_reliability(["reach"], 3)
+        b_dict = compute_edge_reliability_from_counts({"reach": 3})
+        assert b_dict == pytest.approx(b_list, abs=1e-12)
+
+        # Two sources: list API distributes 4 evidence as reach=3, signor=1
+        b_list = compute_edge_reliability(["reach", "signor"], 4)
+        b_dict = compute_edge_reliability_from_counts({"reach": 3, "signor": 1})
+        assert b_dict == pytest.approx(b_list, abs=1e-12)
+
+    def test_from_counts_multi_source(self):
+        """Dict with multiple sources computes correctly."""
+        # reach: rand=0.30, syst=0.05; signor: rand=0.049, syst=0.01
+        # P(wrong) = (0.05 + 0.30^2) * (0.01 + 0.049^1) = 0.14 * 0.059 = 0.00826
+        b = compute_edge_reliability_from_counts({"reach": 2, "signor": 1})
+        assert b == pytest.approx(1.0 - 0.14 * 0.059, abs=0.001)
+        assert b > 0.99
+
+    def test_from_counts_empty(self):
+        """Empty dict returns 0.0."""
+        assert compute_edge_reliability_from_counts({}) == 0.0
+
+    def test_from_counts_with_recalibrated(self):
+        """Works with RECALIBRATED_PRIORS."""
+        b_default = compute_edge_reliability_from_counts(
+            {"reach": 2}, priors=INDRA_PRIORS,
+        )
+        b_recal = compute_edge_reliability_from_counts(
+            {"reach": 2}, priors=RECALIBRATED_PRIORS,
+        )
+        # Recalibrated REACH has higher rand (0.462 vs 0.30), so lower belief
+        assert b_recal < b_default
+
+
+class TestGatedBeliefInputValidation:
+    """Tests for hardened input validation in compute_gated_belief."""
+
+    def test_missing_source_api_raises(self):
+        """Missing source_api key produces a clear ValueError."""
+        evidence = [{"included": True}]
+        with pytest.raises(ValueError, match="missing required 'source_api'"):
+            compute_gated_belief(evidence)
+
+    def test_none_source_api_raises(self):
+        """Explicit None source_api produces a clear ValueError."""
+        evidence = [{"source_api": None, "included": True}]
+        with pytest.raises(ValueError, match="missing required 'source_api'"):
+            compute_gated_belief(evidence)
+
+    def test_string_false_included_is_gated(self):
+        """String 'false' is correctly interpreted as excluded."""
+        evidence = [
+            {"source_api": "reach", "included": "false"},
+            {"source_api": "reach", "included": "False"},
+            {"source_api": "reach", "included": " FALSE "},
+        ]
+        result = compute_gated_belief(evidence)
+        # All three should be gated out
+        assert result.n_gated == 3
+        assert result.n_surviving_evidence == 0
+        assert result.belief == 0.0
+
+    def test_string_true_included_is_kept(self):
+        """String 'true' is correctly interpreted as included."""
+        evidence = [{"source_api": "reach", "included": "true"}]
+        result = compute_gated_belief(evidence)
+        assert result.n_surviving_evidence == 1
+        assert result.belief == pytest.approx(0.65, abs=0.001)

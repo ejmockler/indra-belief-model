@@ -76,6 +76,40 @@ RECALIBRATED_PRIORS: dict[str, tuple[float, float]] = {
 }
 
 
+def compute_edge_reliability_from_counts(
+    source_counts: dict[str, int],
+    priors: dict[str, tuple[float, float]] | None = None,
+) -> float:
+    """Compute edge reliability from per-source evidence counts.
+
+    Uses the INDRA additive formula: for each source s with n_s evidence,
+    the source incorrectness factor is syst(s) + rand(s)^n_s.
+
+    Args:
+        source_counts: Mapping of source API name to evidence count,
+            e.g. {"reach": 3, "signor": 1}.
+        priors: Optional custom {source: (rand, syst)} priors.
+
+    Returns:
+        Reliability score in [0, 1].
+    """
+    if not source_counts:
+        return 0.0
+
+    if priors is None:
+        priors = INDRA_PRIORS
+
+    # INDRA additive formula: P(incorrect) = Product [syst + rand^n]
+    p_incorrect = 1.0
+    for source, n in source_counts.items():
+        if n <= 0:
+            continue
+        rand, syst = priors.get(source.lower(), _DEFAULT_PRIOR)
+        p_incorrect *= syst + rand ** n
+
+    return max(0.0, min(1.0, 1.0 - p_incorrect))
+
+
 def compute_edge_reliability(
     sources: list[str],
     evidence_count: int,
@@ -102,9 +136,6 @@ def compute_edge_reliability(
     if not sources or evidence_count <= 0:
         return 0.0
 
-    if priors is None:
-        priors = INDRA_PRIORS
-
     # Distribute evidence across sources
     unique_sources = sorted(set(sources))
     n_sources = len(unique_sources)
@@ -117,13 +148,7 @@ def compute_edge_reliability(
         if remainder > 0:
             per_source[unique_sources[0]] += remainder
 
-    # INDRA additive formula: P(incorrect) = Product [syst + rand^n]
-    p_incorrect = 1.0
-    for source, n in per_source.items():
-        rand, syst = priors.get(source.lower(), _DEFAULT_PRIOR)
-        p_incorrect *= syst + rand ** n
-
-    return max(0.0, min(1.0, 1.0 - p_incorrect))
+    return compute_edge_reliability_from_counts(per_source, priors)
 
 
 def compute_edge_reliability_with_contradiction(
@@ -244,12 +269,22 @@ def compute_gated_belief(
 
     # Group evidence by source
     by_source: dict[str, dict] = {}  # {source: {total: int, surviving: int}}
-    for ev in evidence:
-        src = ev["source_api"].lower()
+    for i, ev in enumerate(evidence):
+        # Validate source_api
+        src_raw = ev.get("source_api")
+        if src_raw is None:
+            raise ValueError(
+                f"Evidence at index {i} is missing required 'source_api' key: {ev!r}"
+            )
+        src = src_raw.lower()
         if src not in by_source:
             by_source[src] = {"total": 0, "surviving": 0}
         by_source[src]["total"] += 1
-        if ev.get("included", True):
+        # Coerce 'included': string "false"/"true" handled explicitly
+        included = ev.get("included", True)
+        if isinstance(included, str):
+            included = included.strip().lower() == "true"
+        if included:
             by_source[src]["surviving"] += 1
 
     # Compute parametric-only (no gating)
@@ -297,4 +332,113 @@ def compute_gated_belief(
         n_surviving_evidence=n_surviving,
         n_gated=n_total - n_surviving,
         per_source=breakdowns,
+    )
+
+
+def compute_gated_belief_with_contradiction(
+    evidence: list[dict],
+    priors: dict[str, tuple[float, float]] | None = None,
+) -> tuple[GatedBeliefResult, str, bool]:
+    """Compute gated belief with contradiction penalty across regulation directions.
+
+    Unifies LLM gating (compute_gated_belief) and contradiction handling
+    into a single noise-model function.
+
+    Each evidence dict must have:
+        - source_api: str (e.g., 'reach', 'signor')
+        - included: bool (True = LLM approved, False = gated out)
+        - regulation_type: str (e.g., 'activation', 'repression')
+
+    Logic:
+        1. Group evidence by regulation_type.
+        2. Call compute_gated_belief() on each direction's subset.
+        3. Find dominant direction (highest belief).
+        4. Apply contradiction penalty: belief = belief_dominant * (1 - belief_opposing).
+
+    Args:
+        evidence: List of evidence dicts.
+        priors: Optional custom {source: (rand, syst)} priors.
+
+    Returns:
+        (combined_result, dominant_direction, is_contradictory)
+        where combined_result is a GatedBeliefResult with penalized belief,
+        combined counts across all directions, and per_source from the dominant.
+    """
+    if not evidence:
+        return (
+            GatedBeliefResult(
+                belief=0.0, parametric_only=0.0,
+                n_total_evidence=0, n_surviving_evidence=0, n_gated=0,
+                per_source=[],
+            ),
+            "unknown",
+            False,
+        )
+
+    # Group evidence by regulation_type
+    by_direction: dict[str, list[dict]] = {}
+    for ev in evidence:
+        d = ev.get("regulation_type", "unknown")
+        by_direction.setdefault(d, []).append(ev)
+
+    # Score each direction independently
+    dir_results: dict[str, GatedBeliefResult] = {}
+    for direction, dir_evidence in by_direction.items():
+        dir_results[direction] = compute_gated_belief(dir_evidence, priors)
+
+    if not dir_results:
+        return (
+            GatedBeliefResult(
+                belief=0.0, parametric_only=0.0,
+                n_total_evidence=0, n_surviving_evidence=0, n_gated=0,
+                per_source=[],
+            ),
+            "unknown",
+            False,
+        )
+
+    # Find dominant direction (highest belief)
+    dominant_dir = max(dir_results, key=lambda d: dir_results[d].belief)
+    dominant_result = dir_results[dominant_dir]
+
+    # Sum counts across ALL directions
+    total_n_total = sum(r.n_total_evidence for r in dir_results.values())
+    total_n_surviving = sum(r.n_surviving_evidence for r in dir_results.values())
+    total_n_gated = sum(r.n_gated for r in dir_results.values())
+
+    # Check for opposing directions (exclude "unknown")
+    opposing = {
+        d: r for d, r in dir_results.items()
+        if d != dominant_dir and d != "unknown"
+    }
+
+    if opposing:
+        opposing_belief = max(r.belief for r in opposing.values())
+        penalized_belief = dominant_result.belief * (1.0 - opposing_belief)
+
+        return (
+            GatedBeliefResult(
+                belief=penalized_belief,
+                parametric_only=dominant_result.parametric_only,
+                n_total_evidence=total_n_total,
+                n_surviving_evidence=total_n_surviving,
+                n_gated=total_n_gated,
+                per_source=dominant_result.per_source,
+            ),
+            dominant_dir,
+            True,
+        )
+
+    # No contradiction
+    return (
+        GatedBeliefResult(
+            belief=dominant_result.belief,
+            parametric_only=dominant_result.parametric_only,
+            n_total_evidence=total_n_total,
+            n_surviving_evidence=total_n_surviving,
+            n_gated=total_n_gated,
+            per_source=dominant_result.per_source,
+        ),
+        dominant_dir,
+        False,
     )
