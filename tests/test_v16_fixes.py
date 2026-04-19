@@ -157,6 +157,57 @@ def test_voting_k5_bare_majority_medium():
 # _format_entity_lookups uses raw_text, not name (regression anchor for T43)
 # ---------------------------------------------------------------------------
 
+def test_score_statement_public_api_on_synthetic_stmt():
+    """Lock in the public API: score_statement takes native INDRA objects,
+    returns the full scoring dict. Mocks ModelClient to avoid needing a
+    real backend — this is a shape-contract test, not a model evaluation.
+
+    This test also documents the API surface: anything that breaks it
+    (argument order, return dict keys, import path) should fail loudly
+    before reaching the collaborator.
+    """
+    from indra.statements import Phosphorylation, Agent, Evidence
+    from indra_belief import score_statement
+    from indra_belief.model_client import ModelResponse
+
+    class MockClient:
+        """Mock that returns a canned verdict JSON."""
+        def __init__(self):
+            self.model_name = "mock"
+            self.backend = "mock"
+            self.config = {"max_tokens": 2000, "timeout": 60}
+
+        def call(self, system, messages, max_tokens=None, temperature=0.1, retries=3):
+            return ModelResponse(
+                content='{"verdict": "correct", "confidence": "high"}',
+                reasoning="",
+                tokens=50,
+                raw_text='{"verdict": "correct", "confidence": "high"}',
+                finish_reason="stop",
+            )
+
+    stmt = Phosphorylation(
+        Agent("RPS6KA1"), Agent("YBX1"),
+        residue="S", position="102",
+    )
+    ev = Evidence(
+        source_api="reach",
+        text="RSK1 phosphorylates YB-1 at S102 in response to stress.",
+    )
+    result = score_statement(stmt, ev, MockClient(), voting_k=1)
+
+    # Contract keys
+    for key in ("score", "verdict", "confidence", "tier",
+                 "grounding_status", "provenance_triggered", "tokens"):
+        assert key in result, f"missing public API key: {key}"
+
+    # Value ranges
+    assert result["verdict"] in ("correct", "incorrect", None)
+    assert result["confidence"] in ("high", "medium", "low", None)
+    assert 0.0 <= result["score"] <= 1.0
+    assert isinstance(result["tokens"], int)
+
+
 def test_format_entity_lookups_uses_raw_text():
     """The bug being anchored: v15 looked up entity.name, confirming Gilda's
     existing decision instead of disambiguating the raw reader extraction.

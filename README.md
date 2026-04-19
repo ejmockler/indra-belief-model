@@ -131,6 +131,15 @@ PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --resume data/results/run.jsonl  # resume interrupted runs
 ```
 
+## How we iterate
+
+Contributor-facing rules to keep the repository legible:
+
+- **`main` is the canonical state.** Every "ship" decision ends with `git push`. Local ship decisions don't count.
+- **Version labels don't belong in source.** Version numbers appear in PR titles, CHANGELOG entries, and benchmark-run output filenames (`data/results/<run>.jsonl`). They do *not* appear in source comments, docstrings, or identifier names. `scripts/check_no_version_labels.py` enforces this.
+- **Public API is `score_statement(statement, evidence, client)`.** It takes native INDRA objects and returns the belief score dict. `score(client, record, …)` is the benchmark-harness path used by `indra_belief.scorers.scorer.main`; treat it as internal.
+- **Comments explain current constraints, not past versions.** If a reader needs history, `git log` is the source of truth. "Provenance is selectively enabled because full-population provenance dilutes attention" is legitimate. "Removed in v12" is not.
+
 ## Project structure
 
 ```
@@ -155,7 +164,8 @@ data/
   results/                 # Evaluation results
 
 scripts/
-  check_contamination.py   # Pre-eval gate: examples must not overlap holdout
+  check_contamination.py        # Pre-eval gate: examples must not overlap holdout
+  check_no_version_labels.py    # CI guard: no v{n} labels in src/ comments
 ```
 
 ## References
