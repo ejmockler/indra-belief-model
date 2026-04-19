@@ -8,11 +8,11 @@
       "reason": "Direct: EGFR activates ERK2 (=MAPK1) through a signaling cascade. Functional activity change."
     },
     {
-      "claim": "TNF [Activation] TSC1",
-      "evidence": "The difference in the kinetics of TNFalpha induction of pTSC1 (S487) and pTSC1 (S511) implied that these two phosphorylations might be regulated by different kinases.",
+      "claim": "FOXO1 [Activation] PDGF",
+      "evidence": "Phosphorylation of FOXO1, FOXO3, and FOXO4 increased in chondrocytes stimulated with IL-1beta, TNF-alpha, bFGF, PDGF.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "The evidence describes PHOSPHORYLATION of TSC1 at specific sites, not functional activation. 'Induction of pTSC1' = phosphorylation event. This is Phosphorylation, not Activation."
+      "reason": "The evidence describes PHOSPHORYLATION of FOXO1 by multiple stimuli, not functional activation of PDGF. The claim inverts agent and target, and the mechanism is phosphorylation, not activation."
     }
   ],
   "Activation_hypothesis": [
@@ -24,43 +24,59 @@
       "reason": "Direct experimental result with quantitative data: 'IFN-alpha activated NF-kappaB' with measured fold-change."
     },
     {
-      "claim": "CCR7 [Activation] AKT",
-      "evidence": "CCR7 may activate Akt and the PI3K and Akt signal pathway to promote cell proliferation and spread.",
+      "claim": "MYCBP [Activation] MYC",
+      "evidence": "The upregulation of MYCBP might contribute to tumorigenesis by controlling the transcriptional activity of c-MYC.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'May activate' is a hypothesis — the author speculates about a possible mechanism. No experimental evidence that CCR7 activates AKT is presented."
+      "reason": "'Might contribute' is a hypothesis — the author speculates about a possible mechanism. No experimental evidence that MYCBP activates MYC is presented."
     }
   ],
   "Phosphorylation": [
     {
-      "claim": "TGFB1 [Phosphorylation] SMAD2",
-      "evidence": "SMAD2 phosphorylation by TGF-beta in villous explants and BeWo cells resulted in a reduction of GCM1 and fusogenic protein syncytin expression.",
+      "claim": "CDK5 [Phosphorylation] MAPK10",
+      "evidence": "Here, we show that cdk5 directly phosphorylates c-Jun N-terminal kinase 3 (JNK3) on Thr131 and inhibits its kinase activity.",
       "verdict": "correct",
       "confidence": "high",
-      "reason": "'SMAD2 phosphorylation by TGF-beta' directly states the phosphorylation event. The downstream effects (GCM1 reduction) are consequences, not the relationship being claimed."
+      "reason": "'We show that cdk5 directly phosphorylates JNK3 on Thr131' is an unambiguous experimental result with a specific residue site. MAPK10 = JNK3."
     },
     {
-      "claim": "SGK1 [Phosphorylation] NEDD4L",
-      "evidence": "Moreover, (S422D)SGK1 and SGK3 phosphorylate Nedd4-2.",
+      "claim": "VEGF [Phosphorylation] ERK",
+      "evidence": "In Necl-4-knockdown cells, additional knockdown of PTPN13 did not restore the Necl-4-knockdown-induced inhibition of the VEGF-induced phosphorylation of c-Raf, MEK and ERK.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "The evidence mentions BOTH SGK1 AND SGK3 phosphorylating Nedd4-2. The claim is about SGK1, but the evidence uses a constitutively active MUTANT (S422D)SGK1, and SGK3 also phosphorylates the target — entity boundary confusion."
+      "reason": "Multiple intervening entities (Necl-4, PTPN13, c-Raf, MEK) between VEGF and ERK. The phosphorylation is indirect through a multi-step cascade, not a direct VEGF→ERK event. Entity boundary confusion."
     }
   ],
   "Complex": [
     {
-      "claim": "JDP2 [Complex] CDKN2A",
-      "evidence": "JDP2 binds to histones and inhibits the methylation of H3K27 at the p16Ink4a/Arf locus.",
+      "claim": "SIRT1 [Complex] MYC",
+      "evidence": "We found that SIRT1 coimmunoprecipitated with c-Myc in 2H- and HPC2-exposed cells, indicating that SIRT1 interacts directly with c-Myc during hypoxic conditions.",
       "verdict": "correct",
       "confidence": "high",
-      "reason": "JDP2 acts at the CDKN2A (=p16Ink4a/Arf) locus, involving direct binding interaction. The functional effect (methylation inhibition) follows from the binding."
+      "reason": "Co-IP plus 'interacts directly' is strong evidence for a physical complex between SIRT1 and MYC."
     },
     {
-      "claim": "TNFRSF14 [Complex] CD160",
-      "evidence": "Therefore, we performed a competition assay of CD160 and BTLA binding to HVEM using SPR.",
+      "claim": "TGFB2 [Complex] SMAD2",
+      "evidence": "We analyzed the 3-prime-UTR sequences of the TGFbeta2 and SMAD2 genes and performed luciferase assays to confirm whether miR-148a could bind to the TGFbeta2 and SMAD2 genes.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'We performed a competition assay' describes experimental methodology, not a result. The sentence does not assert that TNFRSF14 (=HVEM) and CD160 actually form a complex."
+      "reason": "'To confirm whether...could bind' is an experimental question about miRNA binding to gene UTRs, not a result asserting protein complex formation between TGFB2 and SMAD2."
+    }
+  ],
+  "Complex_locus": [
+    {
+      "claim": "AKT [Complex] PPP2",
+      "evidence": "Akt directly interacts with the PP2A-B55 holoenzyme.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "Direct protein-protein interaction statement: 'Akt directly interacts with the PP2A-B55 holoenzyme.' Both are proteins; 'interacts' unambiguously refers to physical protein binding."
+    },
+    {
+      "claim": "AP1 [Complex] SMAD",
+      "evidence": "Mutation of the 3' end of GRAS had little effect on SMAD or AP1 binding to the Gnrhr promoter but had an effect on activin responsiveness.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "The evidence describes SMAD and AP1 EACH binding to the Gnrhr promoter (protein-DNA). Binding to a gene promoter or locus is NOT the same as forming a protein-protein complex between SMAD and AP1. Two proteins binding the same DNA region independently does not constitute a Complex."
     }
   ],
   "Inhibition": [
@@ -72,27 +88,43 @@
       "reason": "'Blocked Cullin3 driven EMT' = BRMS1 inhibits the activity/function of CUL3. Direct functional inhibition."
     },
     {
-      "claim": "CDK5RAP3 [Inhibition] CDKN2A",
-      "evidence": "Second, using p14 ARF promoter luciferase reporter assay, we showed that forced expression of CDK5RAP3 repressed the p14 ARF promoter transcriptional activity.",
+      "claim": "STAT3 [Inhibition] TP53",
+      "evidence": "STAT3 represses Glucose-6-Phosphatase and p53 expression.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'Repressed the p14 ARF promoter transcriptional activity' = decrease in expression/transcription. This is DecreaseAmount (reducing mRNA/protein levels), not Inhibition (suppressing protein activity). Promoter repression affects amount, not activity."
+      "reason": "'Represses p53 expression' = decrease in mRNA/protein levels. This is DecreaseAmount, not Inhibition (suppressing protein activity). Expression repression affects amount, not activity."
+    }
+  ],
+  "Inhibition_mirna": [
+    {
+      "claim": "MIR429 [Inhibition] HIF3A",
+      "evidence": "Here we demonstrate that miR-429 attenuates the expression of HIF3A during the early stages of hypoxia.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "'miR-429 attenuates the expression of HIF3A' — miRNAs reduce target abundance, and by INDRA convention this is Inhibition (not DecreaseAmount). Direct experimental statement."
+    },
+    {
+      "claim": "MIR124-1 [Inhibition] CREB1",
+      "evidence": "Thus, we tested whether miR-124 inhibits neuronal hyperexcitability through CREB1.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "CREB1 is named as a downstream MEDIATOR of the phenotype (hyperexcitability), not as the direct target of miR-124. The sentence asserts a miR-124 → hyperexcitability relationship, routed 'through' CREB1 — not a miR-124 → CREB1 repression. Also methodology framing ('we tested whether')."
     }
   ],
   "Inhibition_act_vs_amt": [
     {
-      "claim": "ROBO1 [Inhibition] SRC",
-      "evidence": "Supporting our hypothesis, we observed that Slit2 and Robo1 inhibited the M-gp120-induced activation of c-Src.",
+      "claim": "CDK5 [Inhibition] MAPK10",
+      "evidence": "Here, we show that cdk5 directly phosphorylates c-Jun N-terminal kinase 3 (JNK3) on Thr131 and inhibits its kinase activity.",
       "verdict": "correct",
       "confidence": "high",
-      "reason": "'Inhibited the activation of c-Src' = direct suppression of SRC kinase activity. This is functional Inhibition, not expression change."
+      "reason": "'Inhibits its kinase activity' = direct suppression of JNK3/MAPK10 enzymatic function. This is functional Inhibition, not expression change."
     },
     {
-      "claim": "SOCS3 [Inhibition] TNFRSF1B",
-      "evidence": "The current study tested the hypothesis that SOCS3 over-expression limits the cytokine induction of TNFR2 and/or growth promoting effects of TNFR2.",
+      "claim": "AKT [Inhibition] Wnt",
+      "evidence": "Thus the decreased expression of Akt may induce the down-regulation of the wnt and NFkappaB-route.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'Limits the cytokine induction of TNFR2' = reduces TNFR2 expression levels. This is DecreaseAmount, not Inhibition. Additionally, 'tested the hypothesis' means this is not a confirmed result."
+      "reason": "'Decreased expression' = amount change (DecreaseAmount), and 'may induce' = hedging. Double error: wrong relation type + unconfirmed result."
     }
   ],
   "IncreaseAmount": [
@@ -104,11 +136,11 @@
       "reason": "'Induce the expression of IL-6' = increase IL-6 mRNA/protein levels. This is IncreaseAmount."
     },
     {
-      "claim": "SUMO1 [IncreaseAmount] SP1",
-      "evidence": "Overexpression of Sumo1 specific proteases Senp1 upregulated Prdx6 and Sp1 expression.",
+      "claim": "GSK3B [IncreaseAmount] MYC",
+      "evidence": "Knockdown of GSK3beta by siRNA in the stable fibulin-5-expressing A549 cells restored expression of beta-catenin, c-Myc, cyclin D1 and MMP-7.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "Senp1 (a SUMO protease that removes SUMO1) upregulated SP1 — not SUMO1 itself. The agent is Senp1, not SUMO1."
+      "reason": "Knockdown of GSK3B restores c-Myc expression — logical inversion. GSK3B normally DECREASES MYC; losing GSK3B restores it. The claim says IncreaseAmount, but the evidence shows the opposite."
     }
   ],
   "DecreaseAmount": [
@@ -161,18 +193,18 @@
   ],
   "Translocation": [
     {
-      "claim": "HSP90 [Translocation] IRF3",
-      "evidence": "The mitochondrial outer membrane protein Tom70 recruits IRF3 to mitochondria via Hsp90.",
+      "claim": "RAF1 [Translocation] RAF1",
+      "evidence": "IGF-I induced the formation of a ras-GTP complex, raf-1 translocation to membranes and the subsequent phosphorylation of MEK1/2 in HepG2 cells.",
       "verdict": "correct",
       "confidence": "high",
-      "reason": "HSP90 mediates IRF3 translocation to mitochondria (via Tom70). Translocation relationship supported."
+      "reason": "Direct experimental observation: IGF-I induced 'raf-1 translocation to membranes'. Translocation event confirmed."
     },
     {
-      "claim": "BAX [Translocation] BAX",
-      "evidence": "It has been proposed that Bax does not translocate to mitochondria under normal physiological conditions, due to interaction with Bcl-xL.",
+      "claim": "TFRC [Translocation] TFRC",
+      "evidence": "By contrast, the transferrin receptor does not translocate to the plasma membrane under these conditions.",
       "verdict": "incorrect",
       "confidence": "high",
-      "reason": "'Does not translocate' — negative result. The evidence explicitly states translocation does NOT occur under these conditions."
+      "reason": "'Does not translocate' — explicit negative result. The evidence states translocation does NOT occur."
     }
   ],
   "Ubiquitination": [
@@ -189,6 +221,38 @@
       "verdict": "incorrect",
       "confidence": "high",
       "reason": "'We examined whether...could ubiquitinate' — this is an experimental question, not a result. The sentence does not assert that ubiquitination occurred."
+    }
+  ],
+  "Activation_family": [
+    {
+      "claim": "AKT [Activation] GYS1",
+      "evidence": "These data suggest that stimulation of glycogen synthase by insulin in HepG2 cells is mediated through the PI-3 kinase pathway by activating PKB and PP-1G and inactivating GSK-3beta.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "The claim names AKT (a protein family). Evidence describes activation of PKB, which is a member of the AKT family (AKT1/PKB is the canonical name). Family-level claims are supported by specific member evidence — this is not a grounding error."
+    },
+    {
+      "claim": "MAPK [Activation] AKT",
+      "evidence": "Erythropoietin did not induce mitogen-activated protein kinase phosphorylation in hypoxia and normoxia, but stimulated Akt phosphorylation in normoxia and hypoxia.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "The evidence explicitly says MAPK was NOT induced, and AKT was stimulated by a different agent (erythropoietin) in parallel. MAPK and AKT are regulated independently here — there is no MAPK → AKT activation relationship."
+    }
+  ],
+  "Activation_transcription": [
+    {
+      "claim": "MAPK1 [Activation] ELK1",
+      "evidence": "ERK2 phosphorylates and activates Elk-1, leading to enhanced transcriptional activity of the SRE element.",
+      "verdict": "correct",
+      "confidence": "high",
+      "reason": "ERK2 (=MAPK1) directly phosphorylates and activates Elk-1 — this is a kinase activating a substrate's enzymatic/transcriptional activity. Functional activity change."
+    },
+    {
+      "claim": "TP53 [Activation] PTEN",
+      "evidence": "PTEN is transcriptionally upregulated by p53 and early growth regulated transcriptional factor-1 (EGR-1), while Jun and NFkappa-beta have been shown to repress PTEN transcription.",
+      "verdict": "incorrect",
+      "confidence": "high",
+      "reason": "'Transcriptionally upregulated by p53' = p53 increases PTEN gene expression. This is IncreaseAmount (gene expression increase), not Activation (functional activity change of PTEN protein)."
     }
   ]
 }

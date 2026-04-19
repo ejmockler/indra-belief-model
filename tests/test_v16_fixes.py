@@ -1,0 +1,194 @@
+"""Regression anchors for the v16 fixes.
+
+Each test targets one of the bugs surfaced in the brutalist review of v15
++ the follow-up bugs surfaced when reviewing v16 itself.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from indra_belief.data.entity import GroundedEntity, _text_contains
+from indra_belief.model_client import ModelResponse
+from indra_belief.scorers.scorer import _parse_verdict
+
+
+# ---------------------------------------------------------------------------
+# _text_contains — letter-boundary for short symbols
+# ---------------------------------------------------------------------------
+
+def test_short_symbol_rejects_letter_neighbor():
+    # "ar" must NOT match inside "bar" or "erased"
+    assert _text_contains("ar", "the bar was erased", "thebarwaserased") is False
+
+
+def test_short_symbol_matches_isoform_suffix():
+    # "akt" must match in "akt1" (digit suffix is a valid boundary)
+    assert _text_contains("akt", "akt1 phosphorylates foxo3", "akt1phosphorylatesfoxo3") is True
+
+
+def test_short_symbol_rejects_method_false_match():
+    # "met" must not match inside "method"
+    assert _text_contains("met", "the method used", "themethodused") is False
+
+
+def test_short_symbol_matches_standalone():
+    assert _text_contains("met", "met phosphorylates akt", "metphosphorylatesakt") is True
+
+
+def test_long_name_uses_substring_with_collapsed_variant():
+    # Hyphenated long name with space variant in evidence
+    assert _text_contains("beta-arrestin", "the beta arrestin", "thebetaarrestin") is True
+
+
+def test_empty_needle_returns_false():
+    assert _text_contains("", "anything", "anything") is False
+
+
+# ---------------------------------------------------------------------------
+# Pseudogene exception (entity.py:261-270)
+# ---------------------------------------------------------------------------
+
+def test_pseudogene_baseline_rejects():
+    e = GroundedEntity(name="DVL1P1", verification_status="AMBIGUOUS", is_pseudogene=True)
+    should, _ = e.should_auto_reject("DVL1P1 activates FOS in mice")
+    assert should is True
+
+
+def test_pseudogene_transcript_exception():
+    e = GroundedEntity(name="DVL1P1", verification_status="AMBIGUOUS", is_pseudogene=True)
+    should, _ = e.should_auto_reject("DVL1P1 is a pseudogene transcript")
+    assert should is False
+
+
+def test_pseudogene_lncrna_exception():
+    e = GroundedEntity(name="XYZP1", verification_status="AMBIGUOUS", is_pseudogene=True)
+    should, _ = e.should_auto_reject("XYZP1 lncRNA expression correlates with disease")
+    assert should is False
+
+
+# ---------------------------------------------------------------------------
+# _parse_verdict — content preferred, raw_text fallback
+# ---------------------------------------------------------------------------
+
+def _resp(content: str, reasoning: str, finish: str = "stop") -> ModelResponse:
+    raw = (reasoning + "\n" + content) if reasoning else content
+    return ModelResponse(
+        content=content, reasoning=reasoning, tokens=100,
+        raw_text=raw, finish_reason=finish,
+    )
+
+
+def test_parse_verdict_prefers_content_over_reasoning():
+    # content has the final verdict; reasoning has a contradictory hypothetical
+    r = _resp(
+        content='{"verdict": "correct", "confidence": "high"}',
+        reasoning='Initial thought was {"verdict": "incorrect", "confidence": "low"}',
+    )
+    assert _parse_verdict(r) == ("correct", "high")
+
+
+def test_parse_verdict_falls_back_to_raw_text_on_truncation():
+    # content is non-empty but verdictless (truncation case)
+    r = _resp(
+        content="The analysis continues but was cut off",
+        reasoning='Therefore {"verdict": "incorrect", "confidence": "high"}',
+        finish="length",
+    )
+    assert _parse_verdict(r) == ("incorrect", "high")
+
+
+def test_parse_verdict_uses_raw_text_when_content_empty():
+    # content is empty (reasoning-only response)
+    r = _resp(
+        content="",
+        reasoning='{"verdict": "correct", "confidence": "medium"}',
+    )
+    assert _parse_verdict(r) == ("correct", "medium")
+
+
+def test_parse_verdict_returns_none_when_no_verdict_anywhere():
+    r = _resp(content="no structured output", reasoning="")
+    assert _parse_verdict(r) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# Voting confidence (scorer.py: early-stop vs tiebreaker semantics)
+# ---------------------------------------------------------------------------
+
+def _pick_conf(samples_taken: int, voting_k: int, correct: int, incorrect: int) -> str | None:
+    """Replicates the scorer.py voting confidence logic for isolated testing."""
+    total = correct + incorrect
+    if total == 0:
+        return None
+    agreement = max(correct, incorrect) / total
+    early_stop_unanimous = (samples_taken < voting_k) and agreement == 1.0
+    if early_stop_unanimous:
+        return "high"
+    if agreement >= 0.6:
+        return "medium"
+    return "low"
+
+
+def test_voting_k3_early_stop_unanimous_high():
+    # Early-stop at 2/2 → unanimous on first try → high
+    assert _pick_conf(2, 3, 2, 0) == "high"
+    assert _pick_conf(2, 3, 0, 2) == "high"
+
+
+def test_voting_k3_tiebreaker_medium():
+    # All 3 samples used (first two disagreed) → majority, not unanimous → medium
+    assert _pick_conf(3, 3, 2, 1) == "medium"
+    assert _pick_conf(3, 3, 1, 2) == "medium"
+
+
+def test_voting_k5_early_stop_high():
+    # k=5, early-stop at samples=3 with 3/0 unanimous → high
+    assert _pick_conf(3, 5, 3, 0) == "high"
+
+
+def test_voting_k5_bare_majority_medium():
+    assert _pick_conf(5, 5, 3, 2) == "medium"
+
+
+# ---------------------------------------------------------------------------
+# _format_entity_lookups uses raw_text, not name (regression anchor for T43)
+# ---------------------------------------------------------------------------
+
+def test_format_entity_lookups_uses_raw_text():
+    """The bug being anchored: v15 looked up entity.name, confirming Gilda's
+    existing decision instead of disambiguating the raw reader extraction.
+    v16 prefers raw_text and falls back to name only when raw_text is None.
+    """
+    captured_args: list[dict] = []
+
+    def fake_lookup(args):
+        captured_args.append(args)
+        return f'lookup_gene("{args["entity_name"]}"): stub'
+
+    # Monkey-patch through the scorer module import path
+    from indra_belief.scorers import scorer as s
+    from indra_belief.tools import gilda_tools as gt
+
+    original = gt.lookup_gene_executor
+    gt.lookup_gene_executor = fake_lookup
+    try:
+        # Build a minimal record-like object
+        class FakeEntity:
+            def __init__(self, name, raw_text):
+                self.name = name
+                self.raw_text = raw_text
+
+        class FakeRecord:
+            subject_entity = FakeEntity("RPS6KA1", "RSK1")
+            object_entity = FakeEntity("YBX1", "YB-1")
+
+        block = s._format_entity_lookups(FakeRecord())
+        targets = [a["entity_name"] for a in captured_args]
+        assert "RSK1" in targets, f"expected raw_text RSK1, got {targets}"
+        assert "YB-1" in targets, f"expected raw_text YB-1, got {targets}"
+        assert "RPS6KA1" not in targets, f"should not look up canonical RPS6KA1"
+    finally:
+        gt.lookup_gene_executor = original

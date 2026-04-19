@@ -10,10 +10,15 @@ venv/
 # Large data files (download separately)
 data/benchmark/indra_benchmark_corpus.json.gz
 
-# IDE
+# IDE / tool state
 .idea/
 .vscode/
+.claude/
 *.swp
+
+# Benchmark run outputs (reproducible; not checked in)
+data/results/*.jsonl
+data/results/*.log
 
 # OS
 .DS_Store

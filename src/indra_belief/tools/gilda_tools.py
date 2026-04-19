@@ -1,24 +1,15 @@
-"""Gilda grounding tools for agentic LLM evidence scoring.
+"""Gilda grounding helper for LLM evidence scoring.
 
-Provides tool declarations (Gemma 4 native format) and executors
-for gilda.ground() and gilda.get_names(), registered as callable
-tools for the ModelClient.call_with_tools() interface.
+Provides a pre-computed entity-lookup function that is injected into the
+scorer's user prompt (see scorers.scorer._format_entity_lookups). The
+tool result is computed deterministically and given to the model up
+front — native tool-calling protocols were dropped because the model
+ignored tool results after committing a verdict in its first pass.
 """
 from __future__ import annotations
 
 import gilda
 
-
-# ---------------------------------------------------------------------------
-# Gemma 4 native tool declarations
-# ---------------------------------------------------------------------------
-
-TOOL_DECLARATIONS = """<|tool>declaration:lookup_gene{description:<|"|>Look up a gene or protein name to find candidate identities. Returns top matches with database IDs and scores. Use this when the evidence text mentions an entity name that differs from the claim entity and you need to verify whether they refer to the same gene.<|"|>,parameters:{properties:{entity_name:{description:<|"|>The gene or protein name to look up, exactly as it appears in the text<|"|>,type:<|"|>STRING<|"|>}},required:[<|"|>entity_name<|"|>],type:<|"|>OBJECT<|"|>}}<tool|>"""
-
-
-# ---------------------------------------------------------------------------
-# Tool executors
-# ---------------------------------------------------------------------------
 
 def execute_lookup_gene(args: dict) -> dict:
     """Execute gilda.ground() and return enriched results with functional descriptions."""
@@ -82,7 +73,6 @@ def format_tool_result(result: dict) -> str:
         desc = c.get("description", "")
         pseudo = c.get("pseudogene", False)
         query_is_alias = c.get("query_is_alias")
-        alias_count = c.get("alias_count", 0)
         db = c["db"]
 
         parts = [f"  [{i}] {c['name']}"]
@@ -96,7 +86,6 @@ def format_tool_result(result: dict) -> str:
             parts.append(" (MeSH term, not a specific gene)")
         elif db == "FPLX":
             parts.append(" (protein family)")
-        # Alias provenance — key disambiguation signal
         if query_is_alias is True:
             parts.append(f' ("{entity}" is a known alias)')
         elif query_is_alias is False:
@@ -107,23 +96,10 @@ def format_tool_result(result: dict) -> str:
 
 
 def lookup_gene_executor(args: dict) -> str:
-    """Combined executor: run gilda, format result as text."""
+    """Run gilda lookup and format the result as text."""
     result = execute_lookup_gene(args)
     return format_tool_result(result)
 
-
-# ---------------------------------------------------------------------------
-# Tool registry for ModelClient.call_with_tools()
-# ---------------------------------------------------------------------------
-
-TOOLS = {
-    "lookup_gene": lambda args: lookup_gene_executor(args),
-}
-
-
-# ---------------------------------------------------------------------------
-# Test
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     test_names = ["9G8", "CagA", "DVL", "RSK1", "PKB", "TFs", "p63RhoGEF"]

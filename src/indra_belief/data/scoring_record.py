@@ -1,7 +1,8 @@
 """ScoringRecord — native INDRA Statement + Evidence wrapper for scoring.
 
-Resolves entities once, carries all metadata through the pipeline.
-Replaces the scattered dict-based approach in claim_enricher.py.
+Wraps an INDRA statement + evidence pair, resolving entities once at
+construction and carrying all derived metadata through the pipeline. Owns
+the Tier-1 auto-reject policy and the user-message rendering.
 """
 from __future__ import annotations
 
@@ -49,7 +50,14 @@ class ScoringRecord:
 
     @property
     def object(self) -> str:
+        """Second-agent name, or the first agent for SelfModification
+        statements (where subject and object are the same entity). For
+        Complex with >=2 members, returns member[1]. Returns '?' only when
+        no second agent is available."""
+        from indra.statements import SelfModification
         agents = self.statement.agent_list()
+        if isinstance(self.statement, SelfModification):
+            return agents[0].name if agents and agents[0] else "?"
         if len(agents) > 1 and agents[1]:
             return agents[1].name
         return "?"
@@ -142,20 +150,51 @@ class ScoringRecord:
     # --- Formatting for LLM prompt ---
 
     def format_claim(self) -> str:
-        """Enriched claim string with residue/position and agent annotations."""
+        """Render the claim string in a statement-type-aware form.
+
+        Shapes:
+          - Binary types (Phosphorylation, Activation, ...): `A [Type] B @site`
+          - Complex (>=2 members): `A + B + C [Complex]`
+          - SelfModification (Auto/Transphosphorylation): `A [Type] A @site`
+          - Translocation: `A [Translocation] from X to Y`
+        """
+        from indra.statements import Complex, SelfModification, Translocation
+
+        stmt = self.statement
+        stype = self.stmt_type
+
+        if isinstance(stmt, Complex):
+            names = [m.name for m in stmt.members if m]
+            if len(names) >= 2:
+                return f"{' + '.join(names)} [{stype}]"
+            # Fallback to binary rendering if Complex has <2 members
+            # (malformed input — not expected but defensive).
+
+        if isinstance(stmt, SelfModification):
+            agents = stmt.agent_list()
+            name = agents[0].name if agents and agents[0] else "?"
+            ann = self._format_agent_annotations(0)
+            claim = f"{name}{ann} [{stype}] {name}"
+            if self.residue or self.position:
+                site = "@" + (self.residue or "") + (self.position or "")
+                claim += f" {site}"
+            return claim
+
+        if isinstance(stmt, Translocation):
+            agents = stmt.agent_list()
+            name = agents[0].name if agents and agents[0] else "?"
+            ann = self._format_agent_annotations(0)
+            from_loc = stmt.from_location or "?"
+            to_loc = stmt.to_location or "?"
+            return f"{name}{ann} [{stype}] from {from_loc} to {to_loc}"
+
+        # Binary default
         subj_ann = self._format_agent_annotations(0)
         obj_ann = self._format_agent_annotations(1)
-        claim = f"{self.subject}{subj_ann} [{self.stmt_type}] {self.object}{obj_ann}"
-
-        # Add modification site
+        claim = f"{self.subject}{subj_ann} [{stype}] {self.object}{obj_ann}"
         if self.residue or self.position:
-            site = "@"
-            if self.residue:
-                site += self.residue
-            if self.position:
-                site += self.position
+            site = "@" + (self.residue or "") + (self.position or "")
             claim += f" {site}"
-
         return claim
 
     def _format_agent_annotations(self, index: int) -> str:
@@ -269,15 +308,21 @@ class ScoringRecord:
         if entity_ctx:
             parts.append(entity_ctx)
 
-        # Provenance injection disabled — at scale it hurts accuracy by 6.7pp
-        # (72.2% when triggered vs 78.9% baseline on 3754 records). The LLM
-        # performs worse when given extraction provenance signals.
+        # Provenance: only inject when grounding is flagged (has_grounding_signal).
+        # Full-population provenance hurt accuracy by 6.7pp (72.2% vs 78.9% on
+        # 3754 records), but the flagged-grounding subset (n=361) is already at
+        # 71.2% — provenance may help that specific slice without harming the rest.
+        has_flagged_grounding = any(
+            e.has_grounding_signal
+            for e in (self.subject_entity, self.object_entity)
+            if e
+        )
+        if has_flagged_grounding:
+            provenance = self.format_provenance()
+            if provenance:
+                parts.append(provenance)
 
-        # [indirect evidence] marker removed — at scale it causes 5pp higher
-        # FN rate (22% vs 17%) by prejudicing the model toward rejection.
-        # The model can detect indirect evidence from sentence structure itself.
-        ev_prefix = ""
-        parts.append(f'EVIDENCE: "{ev_prefix}{self.evidence_text}"')
+        parts.append(f'EVIDENCE: "{self.evidence_text}"')
 
         return "\n".join(parts)
 

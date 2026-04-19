@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any
+
+
+# Gilda score threshold below which a text→entity mapping is treated as
+# low-confidence. Calibrated empirically: catches CagA→S100A8 (0.521),
+# ActA→ACTA1 (0.521) while allowing known aliases through.
+LOW_CONFIDENCE_THRESHOLD = 0.53
 
 
 @dataclass
@@ -80,8 +85,6 @@ class GroundedEntity:
 
     def _verify_raw_text(self, raw_text: str) -> None:
         """Check whether raw_text maps to the same entity as the claim."""
-        from indra_belief.tools.grounding_verifier import LOW_CONFIDENCE_THRESHOLD
-
         text_results = _cached_ground(raw_text)
         if not text_results:
             self.verification_status = "UNRESOLVABLE"
@@ -106,6 +109,55 @@ class GroundedEntity:
             ) if self.db == "HGNC" else False
             self.verification_note = (
                 f'"{raw_text}" resolves to {text_top.entry_name} = {self.name}'
+            )
+            return
+
+        # Equivalence check 1a: family ancestry (claim is member of text's family).
+        # Family-level evidence supports member-level claim.
+        if _is_descendant(self.db, self.db_id, text_top.db, str(text_top.id)):
+            self.verification_status = "MATCH"
+            self.verification_note = (
+                f'"{raw_text}" resolves to family {text_top.entry_name}; '
+                f'{self.name} is a member (family-level evidence)'
+            )
+            return
+
+        # Equivalence check 1b: family ancestry (text is member of claim's family).
+        # Member-level evidence supports family-level claim. Mirrors the prompt
+        # rule "a family-level claim is supported by evidence about any specific
+        # family member" and format_alias_context for FPLX entities.
+        if _is_descendant(text_top.db, str(text_top.id), self.db, self.db_id):
+            self.verification_status = "MATCH"
+            self.verification_note = (
+                f'"{raw_text}" resolves to {text_top.entry_name}, a member '
+                f'of family {self.name} (member-level evidence for family claim)'
+            )
+            return
+
+        # Equivalence check 2: alias substring match.
+        # raw_text may be a descriptive alias of the claim entity (e.g.,
+        # "collagenase 1" is an alias of MMP1, "beta-arrestin 2" of ARRB2).
+        # Requires at least one specific (non-generic) token overlap to
+        # avoid accepting ultra-generic terms like "protein phosphatase".
+        if self.db == "HGNC" and _alias_substring_match(raw_text, self.all_names):
+            self.verification_status = "MATCH"
+            self.verification_note = (
+                f'"{raw_text}" matches an alias of {self.name} '
+                f'(specific-term overlap)'
+            )
+            return
+
+        # Equivalence check 3: display-name alignment.
+        # If gilda grounded the claim to an entity whose canonical name differs
+        # from the claim (ambiguous grounding), but text_top's display name
+        # matches the claim name, the raw_text extraction is a better match.
+        if (self.canonical
+                and self.canonical.lower() != self.name.lower()
+                and text_top.entry_name.lower() == self.name.lower()):
+            self.verification_status = "MATCH"
+            self.verification_note = (
+                f'"{raw_text}" resolves to {text_top.entry_name} '
+                f'(claim name {self.name} is ambiguous; text extraction agrees)'
             )
             return
 
@@ -155,10 +207,13 @@ class GroundedEntity:
             return parts
 
         if self.is_family:
-            parts = f"{self.name} (family: {self.canonical}"
+            parts = f"{self.name} (protein family"
             if self.family_members:
-                parts += f", members: {', '.join(self.family_members[:6])}"
-            parts += " — if text names a specific member, the claim should use that member, not the family)"
+                parts += f", includes {', '.join(self.family_members[:6])}"
+            parts += (
+                " — a family-level claim is supported by evidence about any"
+                " specific family member)"
+            )
             return parts
 
         return ""
@@ -206,6 +261,13 @@ class GroundedEntity:
         # the LLM to consider as context if needed.
 
         if self.verification_status == "AMBIGUOUS" and self.is_pseudogene:
+            # Per prompt rule: pseudogene claims are likely wrong UNLESS evidence
+            # explicitly describes pseudogene transcripts / lncRNAs. Skip auto-
+            # reject when the evidence text discusses pseudogene biology.
+            ev_low = evidence_text.lower()
+            if any(kw in ev_low for kw in ("pseudogene", "lncrna", "lnc-rna",
+                                            "non-coding rna", "noncoding rna")):
+                return False, ""
             return True, f"Pseudogene mapping: {self.name} is a pseudogene. {self.verification_note}"
 
         return False, ""
@@ -213,15 +275,21 @@ class GroundedEntity:
     def _entity_in_evidence(self, evidence_text: str, exclude_raw_text: bool = False) -> bool:
         """Check if the claim entity (or aliases) appears in evidence text.
 
+        Uses word-boundary matching for short claim names (≤4 chars) to avoid
+        false-matches like "AR" hitting "erased" or "MET" hitting "method".
+        Longer names use substring match (tolerant to hyphen/space variants).
+
         When exclude_raw_text=True, skip aliases that match the raw_text —
         prevents circular matching where the raw_text that triggered
         LOW_CONFIDENCE also appears as an HGNC alias (e.g., CagA = CAGA).
         """
+        import re
+
         ev_lower = evidence_text.lower()
         ev_collapsed = ev_lower.replace("-", "").replace(" ", "")
         ce_low = self.name.lower()
 
-        if ce_low in ev_lower or ce_low.replace("-", "").replace(" ", "") in ev_collapsed:
+        if _text_contains(ce_low, ev_lower, ev_collapsed):
             return True
 
         # Check aliases
@@ -232,7 +300,7 @@ class GroundedEntity:
                 # Skip aliases that match the raw_text (circular match)
                 if rt_low and a_low == rt_low:
                     continue
-                if a_low in ev_lower or a_low.replace("-", "").replace(" ", "") in ev_collapsed:
+                if _text_contains(a_low, ev_lower, ev_collapsed):
                     return True
 
         # Check descriptive name overlap with raw_text
@@ -319,3 +387,121 @@ def _get_fplx_members(fplx_id: str) -> list[str]:
         return sorted(names)
     except Exception:
         return []
+
+
+@lru_cache(maxsize=4096)
+def _is_descendant(child_db: str | None, child_id: str | None,
+                    parent_db: str | None, parent_id: str | None) -> bool:
+    """Whether (child_db, child_id) is a descendant of (parent_db, parent_id)
+    in the INDRA bio ontology. Used to accept family-level evidence for
+    member-level claims (e.g., claim ERK, evidence MAPK → MATCH).
+    """
+    if not all((child_db, child_id, parent_db, parent_id)):
+        return False
+    if (child_db, child_id) == (parent_db, parent_id):
+        return False  # handled by caller
+    try:
+        from indra.ontology.bio import bio_ontology
+        children = bio_ontology.get_children(parent_db, parent_id)
+        for cdb, cid in children:
+            if cdb == child_db and str(cid) == str(child_id):
+                return True
+        # Transitive check: check grandchildren via get_parents on the child
+        parents = bio_ontology.get_parents(child_db, child_id)
+        for pdb, pid in parents:
+            if pdb == parent_db and str(pid) == str(parent_id):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# Short claim names (≤4 chars) are prone to false-match via unbounded substring
+# (e.g., "AR" hits "erased", "MET" hits "method"). Use word-boundary regex for
+# these; longer names use fast substring match.
+_SHORT_SYMBOL_LEN = 4
+
+
+def _text_contains(needle: str, haystack: str, haystack_collapsed: str) -> bool:
+    """Membership check with letter-boundary enforcement for short symbols.
+
+    Short (≤4 char) needles require LETTER boundaries (neighbor must not be
+    a lowercase letter). This keeps "AKT" matching "AKT1" (T→1 = letter→digit,
+    not a letter neighbor) and rejects "AR" matching "erased" (a→r = letter
+    neighbor). Digit-prefix/suffix variants stay matched.
+
+    Known limitation: prefixed-letter abbreviations like "pAKT", "cMET" will
+    be MISSED by the short path. That's a FN in `_entity_in_evidence`, so
+    the tier-1 safety check fails and auto-reject fires. Accepted trade —
+    the old unbounded substring had worse FP behavior for short symbols.
+
+    Longer needles use substring + collapsed-hyphen variant.
+    """
+    import re
+
+    if not needle:
+        return False
+    if len(needle) <= _SHORT_SYMBOL_LEN:
+        # Letter boundaries: allow digits, hyphens, parens, whitespace as
+        # neighbors. Reject only when a lowercase letter is adjacent.
+        # Haystack is pre-lowercased by the caller, so `[a-z]` covers all
+        # alphabetic neighbors.
+        pattern = r'(?<![a-z])' + re.escape(needle) + r'(?![a-z])'
+        return bool(re.search(pattern, haystack))
+    if needle in haystack:
+        return True
+    collapsed = needle.replace("-", "").replace(" ", "")
+    return collapsed in haystack_collapsed
+
+
+_GENERIC_TOKENS = {
+    "protein", "proteins", "factor", "factors", "receptor", "receptors",
+    "ligand", "ligands", "phosphatase", "phosphatases", "kinase", "kinases",
+    "enzyme", "enzymes", "subunit", "family", "complex", "domain",
+    "binding", "inhibitor", "activator", "substrate", "type",
+    "alpha", "beta", "gamma", "delta", "1", "2", "3", "4", "5",
+    "the", "of", "and", "a", "an", "for", "to", "by", "or",
+}
+
+
+def _tokenize(text: str) -> set[str]:
+    """Normalize to lowercase tokens, splitting on non-alphanumeric AND
+    on letter/digit boundaries (so 'collagenase1' → {'collagenase', '1'})."""
+    import re
+    # Replace Greek letters first
+    greek_map = {
+        'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta',
+        'κ': 'kappa', 'ε': 'epsilon', 'ζ': 'zeta', 'η': 'eta',
+    }
+    lowered = text.lower()
+    for greek, latin in greek_map.items():
+        lowered = lowered.replace(greek, latin)
+    # Extract contiguous letter-only or digit-only runs.
+    tokens = re.findall(r'[a-z]+|\d+', lowered)
+    return {t for t in tokens if t}
+
+
+def _alias_substring_match(raw_text: str, all_names: list[str]) -> bool:
+    """Whether raw_text overlaps with claim's alias list on a specific
+    (non-generic) token. Requires at least one meaningful shared token.
+
+    Accepts:
+      'collagenase1' vs 'Interstitial Collagenase' (shared: 'collagenase')
+      'beta-arrestin 2' vs 'Beta-arrestin-2'       (shared: 'arrestin')
+    Rejects:
+      'protein phosphatase' vs 'protein phosphatase 7, catalytic...'
+        (only generic tokens shared)
+    """
+    rt_tokens = _tokenize(raw_text)
+    specific_rt = rt_tokens - _GENERIC_TOKENS
+    if not specific_rt:
+        return False
+
+    for alias in all_names or []:
+        if len(alias) < 3:
+            continue
+        alias_tokens = _tokenize(alias)
+        specific_alias = alias_tokens - _GENERIC_TOKENS
+        if specific_rt & specific_alias:
+            return True
+    return False

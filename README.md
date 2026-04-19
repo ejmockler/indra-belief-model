@@ -30,39 +30,11 @@ Native INDRA Statement + Evidence objects, resolved through `ScoringRecord`:
 
 Mapped to a continuous score: `{correct+high: 0.95, correct+medium: 0.80, ..., incorrect+high: 0.05}`.
 
-## Results
-
-| Version | Holdout (200) | Large (3,754) | Architecture |
-|---------|---------------|---------------|-------------|
-| v5 | 80.2% | — | 8 contrastive examples |
-| v8 | 85.4% | — | + hedging rules, alias filter |
-| v10 | 85.9% | — | + deterministic gilda verification |
-| v11 | 90.0% | 78.7% | + gilda confidence threshold, pseudogene, provenance |
-| **v12** | *eval pending* | *eval pending* | Removed LOW_CONFIDENCE/provenance, expanded bank, voting |
+## How it works
 
 Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
 
-### v11 large-scale findings
-
-The 200-record holdout (90.0%) overstated performance. At 3,754 records:
-- Overall: **78.7%** (2,956/3,754)
-- LOW_CONFIDENCE auto-reject: **53.6% precision** (32 false rejections) — disabled in v12
-- Provenance: **72.2%** when triggered vs 78.9% baseline — removed in v12
-- Worst by volume: Activation (74.2%, 236 errors), Complex (84.6%, 200 errors)
-
-### Failed experiments
-
-| Experiment | Result | Why it failed |
-|-----------|--------|--------------|
-| Decomposed 3-call | 65.9% | Semantic gap: natural-language extraction can't bridge INDRA's soft ontology boundaries |
-| Agentic tool-use (v9) | 84.9% | Model ignores tool results after committing in pass 1 |
-| Structured provenance | -6.7pp | Attention dilution on 26B model |
-| Graduated warnings | 3 regressions per 1 fix | Redirects attention from sentence comprehension |
-| Indirect evidence marker | +5pp FN | Prejudices model toward rejection |
-
-## How it works
-
-### Two-tier architecture (v12)
+### Two-tier architecture
 
 **Tier 1: Deterministic grounding** (no LLM call)
 
@@ -75,18 +47,18 @@ The 200-record holdout (90.0%) overstated performance. At 3,754 records:
 
 **Tier 2: LLM text comprehension**
 
-- v8 system prompt (6 rules)
-- 7 adaptive contrastive pairs (14 examples) selected by statement type
-- Optional self-consistency voting (k=3 or k=5, majority vote at temperature=0.6)
+- Six-rule system prompt (negation, hedging, family/member equivalence, etc.)
+- Seven adaptive contrastive pairs (14 examples) selected by statement type
+- Self-consistency voting (k=3 default, majority vote at temperature=0.6)
 
 ### Adaptive few-shot selection
 
-The example bank has 12 type-specific contrastive pairs. For each record, 7 pairs are selected by priority:
+The example bank has type-specific contrastive pairs. For each record, 7 pairs are selected by priority:
 
 1. **Own type** from bank (e.g., Activation pairs for an Activation claim)
 2. **Adjacent types** from `TYPE_ADJACENCY` map (e.g., IncreaseAmount for Activation)
 3. **Universal patterns** (logical inversion, hedging scope)
-4. **Fill** from v8 base examples
+4. **Fill** from the base contrastive pair set
 
 Types with bank examples: Activation (2 pairs), Inhibition (2), Phosphorylation, Complex, IncreaseAmount, DecreaseAmount, Dephosphorylation, Autophosphorylation, Translocation, Ubiquitination.
 
@@ -97,6 +69,21 @@ Model confidence scores are useless (100% report "high"). Self-consistency uses 
 ```bash
 PYTHONPATH=src python -m indra_belief.scorers.scorer --voting-k 3
 ```
+
+## Design decisions we already paid for
+
+Earlier iterations measured the following approaches and rejected them. If you're considering a change that resembles one of these, check the data before re-proposing:
+
+| Approach | Outcome | Why it fails |
+|---|---|---|
+| Decomposed 3-call scorer | 65.9% accuracy | Natural-language extraction can't bridge INDRA's soft ontology boundaries — requires three LLMs to agree on a fuzzy contract |
+| Native tool-calling (agentic lookup) | 84.9%, below baseline | Model ignores tool results after committing to a verdict in its first pass |
+| Structured provenance, full population | -6.7pp accuracy | Attention dilution on 26B model outweighs disambiguation benefit — selectively enabling provenance only for flagged-grounding records preserves the signal without the cost |
+| Graduated warnings for every grounding quirk | 3 regressions per 1 fix | Redirects attention from sentence comprehension; now limited to PSEUDOGENE and LOW_CONFIDENCE |
+| Indirect-evidence marker in the prompt | +5pp false negatives | Prejudices model toward rejection; removed |
+| LOW_CONFIDENCE auto-reject (blanket) | 53.6% precision at scale (32 false rejections on 3,754 records) | The gilda score threshold is too noisy to gate on deterministically; the signal is still available to the LLM as context |
+
+Headline baselines measured during iteration: gemma-4-26b + adaptive bank + voting reaches ~84% accuracy on the 501-record stratified sample. Small-holdout numbers (200 records) overstate by ~4-5pp relative to large-scale evaluation (3,000+ records) — check the larger set before celebrating.
 
 ## Setup
 
@@ -110,56 +97,65 @@ pip install gilda indra
 
 ## Usage
 
+### Score a single Statement
+
 ```python
-from indra_belief.scorers.scorer import score
-from indra_belief.model_client import ModelClient
-from indra_belief.data.corpus import CorpusIndex
+from indra.statements import Phosphorylation, Agent, Evidence
+from indra_belief import ModelClient, score_statement
+
+stmt = Phosphorylation(
+    Agent("RPS6KA1"), Agent("YBX1"),
+    residue="S", position="102",
+)
+ev = Evidence(
+    source_api="reach",
+    text="RSK1 phosphorylates YB-1 at S102 in response to stress.",
+)
 
 client = ModelClient("gemma-remote")
-index = CorpusIndex()
-records = index.build_records("data/benchmark/holdout.jsonl")
-
-result = score(client, records[0])
-# result["verdict"] → "correct" or "incorrect"
-# result["score"]   → 0.95 (correct+high) to 0.05 (incorrect+high)
-# result["tier"]    → "llm_comprehension" or "deterministic_mismatch"
+result = score_statement(stmt, ev, client)
+# result["verdict"]    → "correct" | "incorrect" | None
+# result["score"]      → 0.95 (correct+high) … 0.05 (incorrect+high)
+# result["confidence"] → "high" | "medium" | "low"
+# result["tier"]       → which scoring path produced the verdict
 ```
 
-Command-line evaluation:
+### Benchmark evaluation against a holdout file
+
 ```bash
 PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --model gemma-remote \
     --holdout data/benchmark/holdout_large.jsonl \
-    --output data/results/v12_large.jsonl \
-    --voting-k 1 \
-    --resume data/results/v12_large.jsonl  # resume interrupted runs
+    --output data/results/run.jsonl \
+    --voting-k 3 \
+    --resume data/results/run.jsonl  # resume interrupted runs
 ```
 
 ## Project structure
 
 ```
 src/indra_belief/
-  model_client.py          # LLM client (OpenAI-compat + Anthropic)
+  model_client.py          # Model transport (OpenAI-compat + Anthropic)
   scorers/
-    scorer.py              # v12 — current: native INDRA, adaptive bank, voting
-    evidence_scorer.py     # v8 foundation (SYSTEM_PROMPT, contrastive examples)
-    v11_scorer.py          # v11 — dict-based scorer (legacy)
-    v10_scorer.py          # v10 — first deterministic tier (legacy)
-    decomposed_scorer.py   # Failed 3-call experiment
-    agentic_scorer.py      # Failed tool-use experiment
+    scorer.py              # The scorer — native INDRA, adaptive bank, voting
+    _prompts.py            # System prompt, contrastive examples, verdict parser
   data/
     entity.py              # GroundedEntity: single gilda resolution per entity
     scoring_record.py      # ScoringRecord: wraps INDRA Statement + Evidence
-    corpus.py              # CorpusIndex: lazy source_hash → Statement lookup
-    example_bank.json      # 12 type-specific contrastive pairs
-    claim_enricher.py      # Legacy corpus index (v10/v11 dict-based)
+    corpus.py              # CorpusIndex: source_hash → Statement lookup
+    example_bank.json      # Type-specific contrastive pairs
+  tools/
+    gilda_tools.py         # Entity lookup helper (pre-computed, injected into prompt)
 
 data/
   benchmark/
     holdout.jsonl          # 200-record balanced evaluation set
     holdout_large.jsonl    # 4,625-record half-corpus evaluation
-    example_pairs.json     # 36 entity pairs excluded from holdouts
+    example_pairs.json     # Entity pairs excluded from holdouts
   results/                 # Evaluation results
+
+scripts/
+  check_contamination.py   # Pre-eval gate: examples must not overlap holdout
 ```
 
 ## References
