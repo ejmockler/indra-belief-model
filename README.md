@@ -120,6 +120,37 @@ result = score_statement(stmt, ev, client)
 # result["tier"]       → which scoring path produced the verdict
 ```
 
+### Composition with INDRA belief
+
+`score_statement` is the per-sentence comprehension layer. The downstream
+question — *given all evidence for an edge, what is the belief?* — is
+answered by composing LLM verdicts with INDRA's parametric noise model:
+
+```python
+from indra_belief.composed_scorer import (
+    ComposedBeliefScorer, EvidenceRecord,
+)
+from indra_belief.noise_model import RECALIBRATED_PRIORS
+
+scorer = ComposedBeliefScorer(priors=RECALIBRATED_PRIORS)
+records = [
+    EvidenceRecord(source_api="reach",   verdict="correct"),
+    EvidenceRecord(source_api="sparser", verdict="incorrect"),  # gated out
+    EvidenceRecord(source_api="medscan", verdict=None),         # passes through
+]
+result = scorer.score_edge(records)
+# result.belief           → composed edge belief
+# result.parametric_only  → belief before LLM gating (for ablation)
+# result.n_gated          → evidence removed by the gate
+```
+
+The LLM acts as a hard filter over the noise-model input. Gate semantics:
+`verdict="correct"` passes; unscored evidence (`verdict=None`) passes by
+default (`gate_unscored=True` to tighten); `"incorrect"` and any other
+string — including `"ambiguous"` or parse failures — are removed. Priors
+live in `noise_model.py` (`INDRA_PRIORS`, `RECALIBRATED_PRIORS`). See
+`scripts/benchmark_composition.py` for the benchmark used to pick them.
+
 ### Benchmark evaluation against a holdout file
 
 ```bash
@@ -145,6 +176,8 @@ Contributor-facing rules to keep the repository legible:
 ```
 src/indra_belief/
   model_client.py          # Model transport (OpenAI-compat + Anthropic)
+  noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
+  composed_scorer.py       # LLM verdict → hard gate over the parametric noise model
   scorers/
     scorer.py              # The scorer — native INDRA, adaptive bank, voting
     _prompts.py            # System prompt, contrastive examples, verdict parser

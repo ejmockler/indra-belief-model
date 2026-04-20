@@ -32,7 +32,9 @@ _PASS_VERDICTS = frozenset({"correct"})
 # Verdict categories that are gated out
 _GATE_VERDICTS = frozenset({"incorrect"})
 
-# Everything else (None, "ambiguous", parse failures) → gated out (conservative)
+# Unscored evidence (verdict=None) passes by default; set gate_unscored=True
+# to exclude it. Any other verdict string ("ambiguous", parse failures, …) is
+# gated out conservatively — only "correct" counts as a pass.
 
 
 @dataclass(frozen=True)
