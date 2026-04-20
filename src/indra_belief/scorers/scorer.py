@@ -465,7 +465,7 @@ def score(
     }
 
 
-def score_statement(
+def score_evidence(
     statement,
     evidence,
     client: ModelClient,
@@ -473,59 +473,80 @@ def score_statement(
     voting_k: int = 3,
     max_tokens: int = 12000,
 ) -> dict:
-    """Score a single INDRA Statement + Evidence pair.
+    """Score one (Statement, Evidence) pair — the atomic per-sentence call.
 
-    Primary public API. Takes native INDRA objects; returns the belief
-    score dict (score ∈ [0,1], verdict, confidence, tier, …).
+    This is the per-sentence comprehension layer: a single LLM judgment of
+    whether `evidence.text` supports the claim expressed by `statement`.
+    For scoring a whole Statement (which carries `statement.evidence` as a
+    list), use `score_statement`, which iterates this function.
 
     Args:
-        statement: An `indra.statements.Statement` instance. Binary types
-            (Phosphorylation, Activation, …), SelfModification
-            (Autophosphorylation, Transphosphorylation), Complex (any
-            arity), and Translocation are rendered correctly.
+        statement: An `indra.statements.Statement`. Binary types
+            (Phosphorylation, Activation, …), SelfModification, Complex
+            (any arity), and Translocation are rendered correctly.
         evidence: An `indra.statements.Evidence`. Tier-1 grounding
-            verification only runs when `evidence.annotations["agents"]
-            ["raw_text"]` is populated (i.e., produced by an NLP reader).
-            For manually-constructed Evidence, verification is skipped
+            verification fires only when `evidence.annotations["agents"]
+            ["raw_text"]` is populated (i.e., the evidence came from an
+            NLP reader). For hand-built Evidence, verification is skipped
             and scoring is driven entirely by the LLM tier.
         client: A `ModelClient` configured for the chosen backend.
-        voting_k: Self-consistency voting samples (odd, or 1). Default 3
-            triggers up to three independent LLM calls with early-stop.
+        voting_k: Self-consistency voting samples (odd, or 1). Default 3.
         max_tokens: Per-generation token limit. Default 12000.
 
-    Returns:
-        A dict with keys:
-            score            float in [0, 1]; 0.95=correct/high … 0.05=incorrect/high.
-                             Returns 0.5 when verdict cannot be parsed.
-            verdict          "correct" | "incorrect" | None (parse failure)
-            confidence       "high" | "medium" | "low" | None
-            tier             which scoring path produced the verdict
-            grounding_status "all_match" | "flagged"
-            provenance_triggered bool
-            tokens           completion tokens consumed
-            raw_text         decision trace (for debugging)
+    Returns a dict with keys:
+        score            float in [0, 1]; 0.95=correct/high … 0.05=incorrect/high.
+                         Returns 0.5 when verdict cannot be parsed.
+        verdict          "correct" | "incorrect" | None (parse failure)
+        confidence       "high" | "medium" | "low" | None
+        tier             which scoring path produced the verdict
+        grounding_status "all_match" | "flagged"
+        provenance_triggered bool
+        tokens           completion tokens consumed
+        raw_text         decision trace (for debugging)
 
-    Callers should handle `verdict is None` explicitly; it denotes a
-    parse failure or a voting tie, not a neutral judgement.
-
-    Example (scoring an NLP extraction):
-        >>> from indra.statements import Phosphorylation, Agent, Evidence
-        >>> from indra_belief import ModelClient, score_statement
-        >>> stmt = Phosphorylation(
-        ...     Agent("RPS6KA1"), Agent("YBX1"),
-        ...     residue="S", position="102",
-        ... )
-        >>> ev = Evidence(
-        ...     source_api="reach",
-        ...     text="RSK1 phosphorylates YB-1 at S102 in response to stress.",
-        ... )
-        >>> client = ModelClient("gemma-remote")
-        >>> result = score_statement(stmt, ev, client)
-        >>> # result["verdict"] ∈ {"correct", "incorrect", None}
-        >>> # result["score"]   ∈ [0, 1]
+    Callers must handle `verdict is None` explicitly; it denotes a parse
+    failure or a voting tie, not a neutral judgement.
     """
     record = ScoringRecord(statement=statement, evidence=evidence)
     return score(client, record, max_tokens=max_tokens, voting_k=voting_k)
+
+
+def score_statement(
+    statement,
+    client: ModelClient,
+    *,
+    voting_k: int = 3,
+    max_tokens: int = 12000,
+) -> list[dict]:
+    """Score an INDRA Statement by scoring each of its evidence sentences.
+
+    Mirrors INDRA's abstraction: a `Statement` bundles `statement.evidence`
+    as a list of `Evidence` objects, and a Statement-level belief is
+    composed from per-sentence judgments. Returns one scoring dict per
+    evidence, in the same order as `statement.evidence`. Returns `[]` if
+    the statement has no evidence.
+
+    Pair with `indra_belief.composed_scorer.ComposedBeliefScorer` to lift
+    the per-sentence verdicts into an edge-level belief:
+
+        >>> verdicts = score_statement(stmt, client)
+        >>> records = [
+        ...     EvidenceRecord(source_api=ev.source_api, verdict=v["verdict"])
+        ...     for ev, v in zip(stmt.evidence, verdicts)
+        ... ]
+        >>> belief = ComposedBeliefScorer().score_edge(records).belief
+
+    To score only one sentence of a Statement — skipping the rest of
+    `stmt.evidence` — call `score_evidence(stmt, ev, client)` directly.
+    """
+    evidences = list(statement.evidence or [])
+    return [
+        score_evidence(
+            statement, ev, client,
+            voting_k=voting_k, max_tokens=max_tokens,
+        )
+        for ev in evidences
+    ]
 
 
 def main():

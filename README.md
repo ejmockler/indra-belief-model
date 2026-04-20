@@ -97,7 +97,11 @@ pip install gilda indra
 
 ## Usage
 
-### Score a single Statement
+### Score a Statement's evidence
+
+An INDRA `Statement` bundles a list of `Evidence` objects. `score_statement`
+mirrors that abstraction: one per-sentence verdict per evidence, returned
+in order.
 
 ```python
 from indra.statements import Phosphorylation, Agent, Evidence
@@ -107,49 +111,53 @@ stmt = Phosphorylation(
     Agent("RPS6KA1"), Agent("YBX1"),
     residue="S", position="102",
 )
-ev = Evidence(
-    source_api="reach",
-    text="RSK1 phosphorylates YB-1 at S102 in response to stress.",
-)
+stmt.evidence = [
+    Evidence(source_api="reach",
+             text="RSK1 phosphorylates YB-1 at S102 in response to stress."),
+    Evidence(source_api="sparser",
+             text="The kinase-dead RSK1 mutant was unable to phosphorylate YB-1 at S102."),
+]
 
 client = ModelClient("gemma-remote")
-result = score_statement(stmt, ev, client)
-# result["verdict"]    → "correct" | "incorrect" | None
-# result["score"]      → 0.95 (correct+high) … 0.05 (incorrect+high)
-# result["confidence"] → "high" | "medium" | "low"
-# result["tier"]       → which scoring path produced the verdict
+verdicts = score_statement(stmt, client)
+# verdicts is list[dict], one per evidence:
+#   verdicts[i]["verdict"]    → "correct" | "incorrect" | None
+#   verdicts[i]["score"]      → 0.95 (correct+high) … 0.05 (incorrect+high)
+#   verdicts[i]["confidence"] → "high" | "medium" | "low"
+#   verdicts[i]["tier"]       → which scoring path produced the verdict
 ```
+
+To score just one evidence of a Statement (skipping the rest of `stmt.evidence`), use `score_evidence(stmt, ev, client)`.
 
 ### Composition with INDRA belief
 
-`score_statement` is the per-sentence comprehension layer. The downstream
-question — *given all evidence for an edge, what is the belief?* — is
-answered by composing LLM verdicts with INDRA's parametric noise model:
+`score_statement` is the per-sentence comprehension layer. The edge-level
+question — *given all evidence for a statement, what is the belief?* — is
+answered by composing per-sentence verdicts with INDRA's parametric noise
+model. The two layers chain directly:
 
 ```python
-from indra_belief.composed_scorer import (
-    ComposedBeliefScorer, EvidenceRecord,
-)
+from indra_belief import score_statement
+from indra_belief.composed_scorer import ComposedBeliefScorer, EvidenceRecord
 from indra_belief.noise_model import RECALIBRATED_PRIORS
 
-scorer = ComposedBeliefScorer(priors=RECALIBRATED_PRIORS)
+verdicts = score_statement(stmt, client)  # list[dict], one per stmt.evidence
 records = [
-    EvidenceRecord(source_api="reach",   verdict="correct"),
-    EvidenceRecord(source_api="sparser", verdict="incorrect"),  # gated out
-    EvidenceRecord(source_api="medscan", verdict=None),         # passes through
+    EvidenceRecord(source_api=ev.source_api, verdict=v["verdict"])
+    for ev, v in zip(stmt.evidence, verdicts)
 ]
-result = scorer.score_edge(records)
-# result.belief           → composed edge belief
-# result.parametric_only  → belief before LLM gating (for ablation)
-# result.n_gated          → evidence removed by the gate
+belief = ComposedBeliefScorer(priors=RECALIBRATED_PRIORS).score_edge(records)
+# belief.belief           → composed edge belief
+# belief.parametric_only  → belief before LLM gating (for ablation)
+# belief.n_gated          → evidence removed by the gate
 ```
 
-The LLM acts as a hard filter over the noise-model input. Gate semantics:
-`verdict="correct"` passes; unscored evidence (`verdict=None`) passes by
-default (`gate_unscored=True` to tighten); `"incorrect"` and any other
-string — including `"ambiguous"` or parse failures — are removed. Priors
-live in `noise_model.py` (`INDRA_PRIORS`, `RECALIBRATED_PRIORS`). See
-`scripts/benchmark_composition.py` for the benchmark used to pick them.
+Gate semantics: `verdict="correct"` passes; unscored evidence
+(`verdict=None`) passes by default (`gate_unscored=True` to tighten);
+`"incorrect"` and any other string — including `"ambiguous"` or parse
+failures — are removed. Priors live in `noise_model.py` (`INDRA_PRIORS`,
+`RECALIBRATED_PRIORS`). See `scripts/benchmark_composition.py` for the
+benchmark used to pick them.
 
 ### Benchmark evaluation against a holdout file
 
@@ -168,7 +176,7 @@ Contributor-facing rules to keep the repository legible:
 
 - **`main` is the canonical state.** Every "ship" decision ends with `git push`. Local ship decisions don't count.
 - **Version labels don't belong in source.** Version numbers appear in PR titles, CHANGELOG entries, and benchmark-run output filenames (`data/results/<run>.jsonl`). They do *not* appear in source comments, docstrings, or identifier names. `scripts/check_no_version_labels.py` enforces this.
-- **Public API is `score_statement(statement, evidence, client)`.** It takes native INDRA objects and returns the belief score dict. `score(client, record, …)` is the benchmark-harness path used by `indra_belief.scorers.scorer.main`; treat it as internal.
+- **Public API is `score_statement(statement, client)` + `score_evidence(statement, evidence, client)`.** `score_statement` mirrors INDRA's abstraction (a Statement owns a list of Evidence) and returns one dict per evidence. `score_evidence` is the atomic per-sentence call. `score(client, record, …)` is the benchmark-harness path used by `indra_belief.scorers.scorer.main`; treat it as internal.
 - **Comments explain current constraints, not past versions.** If a reader needs history, `git log` is the source of truth. "Provenance is selectively enabled because full-population provenance dilutes attention" is legitimate. "Removed in v12" is not.
 
 ## Project structure

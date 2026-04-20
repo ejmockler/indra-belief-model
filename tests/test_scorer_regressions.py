@@ -8,7 +8,8 @@ rather than silently. Covers:
   - verdict extraction with CoT-hypothetical defense + truncation fallback
   - voting confidence calibration under early-stop semantics
   - tool-use entity-lookup target (raw_text, not canonical name)
-  - score_statement public API contract (dict shape, value ranges)
+  - score_evidence and score_statement public API contracts
+    (dict shape, value ranges; list-per-evidence iteration)
 """
 from __future__ import annotations
 
@@ -164,34 +165,38 @@ def test_voting_k5_bare_majority_medium():
 # Tool-use lookups must target entity.raw_text, not entity.name
 # ---------------------------------------------------------------------------
 
-def test_score_statement_public_api_on_synthetic_stmt():
-    """Lock in the public API: score_statement takes native INDRA objects,
-    returns the full scoring dict. Mocks ModelClient to avoid needing a
-    real backend — this is a shape-contract test, not a model evaluation.
+class _MockClient:
+    """ModelClient stand-in.
 
-    This test also documents the API surface: anything that breaks it
-    (argument order, return dict keys, import path) should fail loudly
-    before reaching the collaborator.
+    Looks at the user-message evidence text and echoes a verdict keyed to
+    it — so iteration tests can prove each Evidence object was actually
+    routed through, not the same one repeatedly. Evidence text containing
+    "INCORRECT_MARKER" returns incorrect/high; otherwise correct/high.
+    """
+    def __init__(self):
+        self.model_name = "mock"
+        self.backend = "mock"
+        self.config = {"max_tokens": 2000, "timeout": 60}
+        self.seen_evidence_texts: list[str] = []
+
+    def call(self, system, messages, max_tokens=None, temperature=0.1, retries=3):
+        user = messages[-1]["content"] if messages else ""
+        self.seen_evidence_texts.append(user)
+        verdict = "incorrect" if "INCORRECT_MARKER" in user else "correct"
+        payload = f'{{"verdict": "{verdict}", "confidence": "high"}}'
+        return ModelResponse(
+            content=payload, reasoning="", tokens=50,
+            raw_text=payload, finish_reason="stop",
+        )
+
+
+def test_score_evidence_public_api_on_synthetic_stmt():
+    """Lock in score_evidence: takes (statement, evidence, client) and
+    returns the full scoring dict. Shape-contract test — anything that
+    breaks argument order, return keys, or import path must fail loudly.
     """
     from indra.statements import Phosphorylation, Agent, Evidence
-    from indra_belief import score_statement
-    from indra_belief.model_client import ModelResponse
-
-    class MockClient:
-        """Mock that returns a canned verdict JSON."""
-        def __init__(self):
-            self.model_name = "mock"
-            self.backend = "mock"
-            self.config = {"max_tokens": 2000, "timeout": 60}
-
-        def call(self, system, messages, max_tokens=None, temperature=0.1, retries=3):
-            return ModelResponse(
-                content='{"verdict": "correct", "confidence": "high"}',
-                reasoning="",
-                tokens=50,
-                raw_text='{"verdict": "correct", "confidence": "high"}',
-                finish_reason="stop",
-            )
+    from indra_belief import score_evidence
 
     stmt = Phosphorylation(
         Agent("RPS6KA1"), Agent("YBX1"),
@@ -201,18 +206,60 @@ def test_score_statement_public_api_on_synthetic_stmt():
         source_api="reach",
         text="RSK1 phosphorylates YB-1 at S102 in response to stress.",
     )
-    result = score_statement(stmt, ev, MockClient(), voting_k=1)
+    result = score_evidence(stmt, ev, _MockClient(), voting_k=1)
 
-    # Contract keys
     for key in ("score", "verdict", "confidence", "tier",
                  "grounding_status", "provenance_triggered", "tokens"):
         assert key in result, f"missing public API key: {key}"
 
-    # Value ranges
     assert result["verdict"] in ("correct", "incorrect", None)
     assert result["confidence"] in ("high", "medium", "low", None)
     assert 0.0 <= result["score"] <= 1.0
     assert isinstance(result["tokens"], int)
+
+
+def test_score_statement_iterates_evidence_list():
+    """score_statement must honour INDRA's abstraction: one per-sentence
+    dict per Evidence in statement.evidence, in order. Empty evidence
+    returns []."""
+    from indra.statements import Phosphorylation, Agent, Evidence
+    from indra_belief import score_statement
+
+    stmt = Phosphorylation(
+        Agent("RPS6KA1"), Agent("YBX1"),
+        residue="S", position="102",
+    )
+    # Middle evidence is the only one tagged INCORRECT_MARKER — the mock
+    # returns verdict based on that marker, so the result pattern must be
+    # [correct, incorrect, correct]. If the implementation re-scored the
+    # same evidence object three times instead of iterating, the pattern
+    # would collapse to [correct, correct, correct] or [incorrect]*3.
+    stmt.evidence = [
+        Evidence(source_api="reach",   text="RSK1 phosphorylates YB-1 at S102."),
+        Evidence(source_api="sparser", text="INCORRECT_MARKER kinase-dead RSK1 failed to phosphorylate YB-1 at S102."),
+        Evidence(source_api="medscan", text="Phosphorylation of YB-1 Ser102 depends on RSK1 activity."),
+    ]
+
+    client = _MockClient()
+    results = score_statement(stmt, client, voting_k=1)
+
+    assert isinstance(results, list)
+    assert len(results) == len(stmt.evidence)
+    verdicts = [r["verdict"] for r in results]
+    assert verdicts == ["correct", "incorrect", "correct"], (
+        f"expected per-evidence iteration with marker-driven verdicts, got {verdicts}"
+    )
+    # Each evidence text must have reached the client exactly once, in order
+    assert len(client.seen_evidence_texts) == 3
+    for ev, seen in zip(stmt.evidence, client.seen_evidence_texts):
+        assert ev.text in seen, f"evidence {ev.text!r} never reached the client"
+
+    # Empty-evidence Statement returns [] and makes zero LLM calls
+    empty_stmt = Phosphorylation(Agent("A"), Agent("B"))
+    empty_stmt.evidence = []
+    empty_client = _MockClient()
+    assert score_statement(empty_stmt, empty_client, voting_k=1) == []
+    assert empty_client.seen_evidence_texts == []
 
 
 def test_format_entity_lookups_uses_raw_text():
