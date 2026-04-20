@@ -25,7 +25,7 @@ def load_examples() -> list[dict]:
     bank_path = ROOT / "src" / "indra_belief" / "data" / "example_bank.json"
     examples = []
 
-    # V8 contrastive examples
+    # Base contrastive examples
     for ex in CONTRASTIVE_EXAMPLES:
         examples.append({
             "source": "CONTRASTIVE_EXAMPLES",

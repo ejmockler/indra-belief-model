@@ -1,16 +1,16 @@
-"""Benchmark: Realistic v11 LLM false-gate rate and hard-gate composition.
+"""Benchmark: realistic LLM false-gate rate and hard-gate composition.
 
-Simulates the v11 scorer's known accuracy profile (78.7% overall, with
-per-statement-type variation) to measure:
+Simulates the empirically-measured LLM scorer accuracy profile (78.7%
+overall, with per-statement-type variation) to measure:
   1. False-gate rate: correct evidence wrongly rejected
   2. False-pass rate: incorrect evidence wrongly accepted
   3. AUPRC/Brier/ECE of composed hard-gate scoring vs baselines
 
 Compares 4 models:
-  - parametric_recal:   Recalibrated priors, no gating
-  - hard_gate_oracle:   Perfect LLM gating (ceiling)
-  - hard_gate_realistic: Simulated v11 gating
-  - indra_belief:       INDRA pre-computed belief
+  - parametric_recal:    Recalibrated priors, no gating
+  - hard_gate_oracle:    Perfect LLM gating (ceiling)
+  - hard_gate_realistic: Simulated LLM gating at empirical accuracy
+  - indra_belief:        INDRA pre-computed belief
 
 Usage:
     python scripts/benchmark_realistic_gate.py
@@ -40,8 +40,15 @@ BENCHMARK_PATH = (
 
 SEED = 20260408
 
-# v11 per-statement-type accuracy (from prior evaluation)
-V11_TYPE_ACCURACY: dict[str, float] = {
+# Per-statement-type LLM accuracy measured on a 3,754-record half-corpus
+# holdout. Used as simulation input — NOT a live scoring table.
+#
+# Provenance: overall 78.7% on holdout_large.jsonl with the gemma-4-26b
+# scorer configuration current as of commit 41aa44b (gilda confidence
+# threshold, pseudogene detection, full provenance). See the `Design
+# decisions we already paid for` table in README for measurement context.
+# Update BOTH the numbers and this provenance note when re-measuring.
+EMPIRICAL_TYPE_ACCURACY: dict[str, float] = {
     "Dephosphorylation": 0.583,
     "Phosphorylation": 0.80,
     "Autophosphorylation": 0.80,  # group with phosphorylation
@@ -51,7 +58,7 @@ V11_TYPE_ACCURACY: dict[str, float] = {
     "Inhibition": 0.78,
     "Complex": 0.75,
 }
-V11_OVERALL_ACCURACY = 0.787
+EMPIRICAL_OVERALL_ACCURACY = 0.787
 
 
 # ---------------------------------------------------------------------------
@@ -92,18 +99,18 @@ def compute_ece(y_true: np.ndarray, y_score: np.ndarray, n_bins: int = 10) -> fl
 
 
 def get_type_accuracy(stmt_type: str) -> float:
-    """Return v11 accuracy for a statement type, falling back to overall."""
-    return V11_TYPE_ACCURACY.get(stmt_type, V11_OVERALL_ACCURACY)
+    """Return empirical accuracy for a statement type, falling back to overall."""
+    return EMPIRICAL_TYPE_ACCURACY.get(stmt_type, EMPIRICAL_OVERALL_ACCURACY)
 
 
 # ---------------------------------------------------------------------------
 # Simulation
 # ---------------------------------------------------------------------------
 
-def simulate_v11_verdicts(
+def simulate_empirical_verdicts(
     records: list[dict], rng: np.random.Generator
 ) -> np.ndarray:
-    """Simulate per-record v11 LLM verdicts.
+    """Simulate per-record LLM verdicts at the empirical accuracy profile.
 
     Returns array of booleans: True = LLM says "correct", False = "incorrect".
 
@@ -251,7 +258,7 @@ def print_false_gate_analysis(
 
     # Stratify by stmt_type for false-gate
     print("--- Stratified by stmt_type (false-gate rate on correct records) ---")
-    print(f"  {'stmt_type':<22} {'n_corr':>6} {'false_gate':>12} {'rate':>6} {'v11_acc':>7}")
+    print(f"  {'stmt_type':<22} {'n_corr':>6} {'false_gate':>12} {'rate':>6} {'acc':>7}")
     print("  " + "-" * 58)
 
     type_stats = defaultdict(lambda: {"n_correct": 0, "false_gate": 0})
@@ -291,10 +298,10 @@ def main():
           f"Incorrect: {n_incorrect} ({n_incorrect/len(records):.1%})")
     print()
 
-    # Simulate v11 verdicts
+    # Simulate LLM verdicts at the empirical accuracy profile
     rng = np.random.default_rng(SEED)
-    verdicts = simulate_v11_verdicts(records, rng)
-    print(f"Simulated v11 verdicts: {verdicts.sum()} 'correct', "
+    verdicts = simulate_empirical_verdicts(records, rng)
+    print(f"Simulated LLM verdicts: {verdicts.sum()} 'correct', "
           f"{(~verdicts).sum()} 'incorrect'")
     print()
 
@@ -313,7 +320,7 @@ def main():
         for r in records
     ])
 
-    # 3. Hard gate realistic (simulated v11)
+    # 3. Hard gate realistic (simulated LLM at empirical accuracy)
     models["hard_gate_realistic"] = np.array([
         score_hard_gate(r, bool(verdicts[i]), RECALIBRATED_PRIORS)
         for i, r in enumerate(records)
@@ -334,7 +341,7 @@ def main():
     recal_auprc = metrics["parametric_recal"]["auprc"]
     print(f"Oracle ceiling lift over recal:    "
           f"+{oracle_auprc - recal_auprc:.4f} AUPRC")
-    print(f"Realistic v11 lift over recal:     "
+    print(f"Realistic LLM lift over recal:     "
           f"{realistic_auprc - recal_auprc:+.4f} AUPRC")
     print(f"Realistic captures "
           f"{(realistic_auprc - recal_auprc) / (oracle_auprc - recal_auprc) * 100:.1f}% "
@@ -351,8 +358,8 @@ def main():
         "n_correct": n_correct,
         "n_incorrect": n_incorrect,
         "seed": SEED,
-        "v11_overall_accuracy": V11_OVERALL_ACCURACY,
-        "v11_type_accuracy": V11_TYPE_ACCURACY,
+        "empirical_overall_accuracy": EMPIRICAL_OVERALL_ACCURACY,
+        "empirical_type_accuracy": EMPIRICAL_TYPE_ACCURACY,
         "models": metrics,
         "false_gate_analysis": fg_results,
     }

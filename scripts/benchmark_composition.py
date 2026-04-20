@@ -208,7 +208,7 @@ def main():
     correct_records = [r for r in records if is_correct(r)]
     # In oracle mode, correct records are never gated
     print(f"  Oracle: 0/{len(correct_records)} correct records gated (0%)")
-    print(f"  (Real LLM false-gate rate depends on v11 accuracy: ~21%)")
+    print(f"  (Real LLM false-gate rate depends on empirical scorer accuracy: ~21%)")
 
     # Save results
     output_path = Path(sys.argv[1]).parent / "composition_benchmark.json"

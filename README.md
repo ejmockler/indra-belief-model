@@ -165,7 +165,7 @@ data/
 
 scripts/
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
-  check_no_version_labels.py    # CI guard: no v{n} labels in src/ comments
+  check_no_version_labels.py    # CI guard: no v{n} labels in src, tests, scripts
 ```
 
 ## References

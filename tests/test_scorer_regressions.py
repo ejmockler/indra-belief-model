@@ -1,7 +1,14 @@
-"""Regression anchors for the v16 fixes.
+"""Regression anchors for the scorer pipeline.
 
-Each test targets one of the bugs surfaced in the brutalist review of v15
-+ the follow-up bugs surfaced when reviewing v16 itself.
+Each test pins a specific behavioral contract: a bug class that was
+observed, diagnosed, and fixed, captured here so regressions fail loudly
+rather than silently. Covers:
+  - short-symbol substring false matches in _text_contains
+  - pseudogene auto-reject with evidence-text exception
+  - verdict extraction with CoT-hypothetical defense + truncation fallback
+  - voting confidence calibration under early-stop semantics
+  - tool-use entity-lookup target (raw_text, not canonical name)
+  - score_statement public API contract (dict shape, value ranges)
 """
 from __future__ import annotations
 
@@ -154,7 +161,7 @@ def test_voting_k5_bare_majority_medium():
 
 
 # ---------------------------------------------------------------------------
-# _format_entity_lookups uses raw_text, not name (regression anchor for T43)
+# Tool-use lookups must target entity.raw_text, not entity.name
 # ---------------------------------------------------------------------------
 
 def test_score_statement_public_api_on_synthetic_stmt():
@@ -209,9 +216,10 @@ def test_score_statement_public_api_on_synthetic_stmt():
 
 
 def test_format_entity_lookups_uses_raw_text():
-    """The bug being anchored: v15 looked up entity.name, confirming Gilda's
-    existing decision instead of disambiguating the raw reader extraction.
-    v16 prefers raw_text and falls back to name only when raw_text is None.
+    """Tool-use lookups must target the reader-extracted mention, not the
+    already-canonical entity name. Looking up the canonical just confirms
+    Gilda's existing decision; the raw_text is what actually needs
+    disambiguation. Falls back to name only when raw_text is None.
     """
     captured_args: list[dict] = []
 

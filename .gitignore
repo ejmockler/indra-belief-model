@@ -19,6 +19,8 @@ data/benchmark/indra_benchmark_corpus.json.gz
 # Benchmark run outputs (reproducible; not checked in)
 data/results/*.jsonl
 data/results/*.log
+scripts/realistic_gate_results.json
+scripts/composition_benchmark.json
 
 # OS
 .DS_Store
