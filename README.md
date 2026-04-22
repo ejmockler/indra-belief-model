@@ -87,13 +87,72 @@ Headline baselines measured during iteration: gemma-4-26b + adaptive bank + voti
 
 ## Setup
 
+### Dependencies
+
 ```bash
-pip install gilda indra
+pip install gilda indra openai
 
 # Download the benchmark corpus (460MB, not included in repo)
 # Place at data/benchmark/indra_benchmark_corpus.json.gz
 # Source: https://doi.org/10.5281/zenodo.7559353
 ```
+
+### Model configuration
+
+The scorer calls an LLM via `ModelClient(model_name)`. Model names map to
+entries in `model_client.py`'s `LOCAL_MODELS` dict, or to Anthropic model
+IDs (any string starting with `claude-`).
+
+**Local Ollama (recommended for getting started):**
+
+```bash
+# Install Ollama: https://ollama.com
+ollama pull gemma3:27b          # or any model you prefer
+ollama serve                    # starts on localhost:11434
+```
+
+Then add an entry to `LOCAL_MODELS` in `src/indra_belief/model_client.py`:
+
+```python
+"ollama-local": {
+    "base_url": "http://localhost:11434/v1",
+    "model_id": "gemma3:27b",
+    "reasoning_in_content": False,
+    "max_tokens": 1000,
+    "timeout": 120,
+},
+```
+
+Use it: `ModelClient("ollama-local")` or `--model ollama-local` from the CLI.
+
+**Remote Ollama (e.g., a beefy server on your network):**
+
+Same as above but point `base_url` at the remote host. The `gemma-remote`
+entry in the registry shows this pattern — it targets an Ollama instance
+over Tailscale.
+
+**Anthropic API:**
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+```
+
+```python
+client = ModelClient("claude-sonnet-4-20250514")
+```
+
+Any `claude-*` model name routes to the Anthropic backend automatically.
+
+**Key `LOCAL_MODELS` fields:**
+
+| Field | Purpose |
+|-------|---------|
+| `base_url` | OpenAI-compatible endpoint (Ollama serves this at `/v1`) |
+| `model_id` | Model name as known to the server (`ollama list` to check) |
+| `reasoning_in_content` | `True` if CoT appears in `content` (Qwen CRACK); `False` for models with a separate `reasoning_content` field (Gemma 4) or no reasoning |
+| `max_tokens` | Completion token budget — reasoning models need more (8000+) |
+| `num_ctx` | Ollama-specific: context window size (passed via `extra_body`) |
+| `timeout` | Seconds before retry — increase for large models or slow hardware |
 
 ## Usage
 
