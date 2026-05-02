@@ -57,6 +57,25 @@ class TestHardGate:
         assert result.n_surviving == 0
         assert result.n_gated == 1
 
+    def test_abstain_verdict_passes_like_none(self, scorer):
+        """Gate-#26 fix: "abstain" from the decomposed path means "no usable
+        judgment" — same semantics as verdict=None. Gating it like
+        "incorrect" would systematically deflate belief scores on the
+        decomposed path and make the dual-run comparison uninterpretable."""
+        evidence = [EvidenceRecord(source_api="reach", verdict="abstain")]
+        result = scorer.score_edge(evidence)
+        assert result.n_surviving == 1
+        assert result.n_gated == 0
+
+    def test_abstain_verdict_gated_when_configured(self):
+        """When gate_unscored=True, abstain follows the same path as None —
+        excluded from the surviving set."""
+        scorer = ComposedBeliefScorer(gate_unscored=True)
+        evidence = [EvidenceRecord(source_api="reach", verdict="abstain")]
+        result = scorer.score_edge(evidence)
+        assert result.n_surviving == 0
+        assert result.n_gated == 1
+
     def test_mixed_verdicts(self, scorer):
         evidence = [
             EvidenceRecord(source_api="reach", verdict="correct", confidence="high"),

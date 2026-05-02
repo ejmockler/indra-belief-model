@@ -5,10 +5,22 @@ acts as a binary filter: each evidence sentence is either included
 (counts in the noise model) or excluded (removed). Sources with all
 evidence excluded are dropped entirely.
 
-Usage:
+Two entry points:
+
+  Per-evidence:
     scorer = ComposedBeliefScorer(priors=RECALIBRATED_PRIORS)
     result = scorer.score_edge(evidence_with_verdicts)
-    print(result.belief, result.parametric_only, result.n_gated)
+
+  Statement-native (J6):
+    score = score_statement_belief(statement, client)
+    # internally: score_statement → list[dict] per Evidence,
+    #             folded into EvidenceRecords → score_edge
+
+The statement-native form addresses the v1 holdout's truth-vs-scoring
+mismatch: INDRA tags reflect aggregate-across-N-evidences truth, but
+score_evidence runs per-sentence. score_statement_belief aggregates
+per-sentence verdicts into one statement-level belief, matching the
+truth granularity.
 """
 from __future__ import annotations
 
@@ -32,9 +44,16 @@ _PASS_VERDICTS = frozenset({"correct"})
 # Verdict categories that are gated out
 _GATE_VERDICTS = frozenset({"incorrect"})
 
-# Unscored evidence (verdict=None) passes by default; set gate_unscored=True
-# to exclude it. Any other verdict string ("ambiguous", parse failures, …) is
-# gated out conservatively — only "correct" counts as a pass.
+# Verdicts that carry no usable judgment — treated like verdict=None so the
+# parametric noise model falls back gracefully. "abstain" comes from the
+# decomposed pipeline when sub-call failures prevent a meaningful verdict;
+# gating it out alongside "incorrect" would systematically deflate belief
+# scores vs. the monolithic path (which returns None on parse failure).
+_UNSCORED_VERDICTS = frozenset({"abstain"})
+
+# Unscored evidence (verdict=None or "abstain") passes by default; set
+# gate_unscored=True to exclude it. Any other verdict string is gated out
+# conservatively — only "correct" counts as a pass.
 
 
 @dataclass(frozen=True)
@@ -88,7 +107,12 @@ class ComposedBeliefScorer:
         if record.verdict is None:
             # No LLM score available — include by default (graceful degradation)
             return not self.gate_unscored
-        return record.verdict.lower() in _PASS_VERDICTS
+        v = record.verdict.lower()
+        if v in _UNSCORED_VERDICTS:
+            # "abstain" is the decomposed path's signal for "no usable
+            # judgment" — same semantic as None, route through the same gate.
+            return not self.gate_unscored
+        return v in _PASS_VERDICTS
 
     def score_edge(self, evidence: list[EvidenceRecord]) -> ComposedScore:
         """Score an edge using composed parametric + LLM belief.
@@ -133,6 +157,44 @@ class ComposedBeliefScorer:
             gated_result=result,
             has_llm_scores=has_llm,
         )
+
+    def score_statement(self, statement, client) -> ComposedScore:
+        """J6: Score an INDRA Statement, aggregating per-Evidence verdicts.
+
+        Calls `indra_belief.score_statement(stmt, client)` which yields a
+        per-Evidence dict (verdict, confidence, source_api). Folds those
+        into EvidenceRecord and routes through `score_edge` so the
+        statement gets a single belief grounded in INDRA's
+        multi-evidence truth model.
+
+        This is the entry point for callers holding INDRA Statement
+        objects (assemblers, REST clients) — they don't have to iterate
+        evidence themselves. Empty-evidence statements degrade to the
+        zero-evidence ComposedScore (belief=0.0, n_total=0).
+        """
+        from indra_belief import score_statement as _score_statement
+
+        evidences = list(getattr(statement, "evidence", []) or [])
+        if not evidences:
+            return self.score_edge([])
+
+        per_evidence = _score_statement(statement, client)
+        # Defensive: per_evidence may shorter than evidences if the
+        # scorer dropped any. Pair by position; missing entries get
+        # verdict=None so they pass the gate via graceful degradation.
+        records: list[EvidenceRecord] = []
+        for i, ev in enumerate(evidences):
+            verdict = None
+            confidence = None
+            if i < len(per_evidence):
+                verdict = per_evidence[i].get("verdict")
+                confidence = per_evidence[i].get("confidence")
+            records.append(EvidenceRecord(
+                source_api=getattr(ev, "source_api", "unknown") or "unknown",
+                verdict=verdict,
+                confidence=confidence,
+            ))
+        return self.score_edge(records)
 
     def score_edge_with_contradiction(
         self,
