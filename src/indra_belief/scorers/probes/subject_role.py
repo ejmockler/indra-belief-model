@@ -110,6 +110,7 @@ _FEW_SHOTS: list[tuple[str, str]] = [
 
 def answer(
     request: ProbeRequest, client: "ModelClient",
+    *, reasoning_effort: str = "none",
 ) -> ProbeResponse:
     """Resolve a subject_role probe via LLM closed-set classification.
 
@@ -118,6 +119,9 @@ def answer(
     On failure the fallback answer is "absent" — the most conservative
     value that does not cause the adjudicator to commit a false-positive
     relationship.
+
+    U3 selective reasoning: pass reasoning_effort="medium" to escalate
+    on hard cases.
     """
     if request.kind != "subject_role":
         raise ValueError(
@@ -137,6 +141,7 @@ def answer(
         user_message=user_msg,
         answer_set=_ANSWER_SET,
         kind="subject_role",
+        reasoning_effort=reasoning_effort,
         client=client,
     )
     return ProbeResponse(

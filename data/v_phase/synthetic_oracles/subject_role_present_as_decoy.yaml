@@ -1,0 +1,18 @@
+# Synthetic-oracle templates for subject_role = present_as_decoy.
+# Subject mentioned but in unrelated relation pattern.
+
+probe: subject_role
+class: present_as_decoy
+templates:
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_X} {VERB} {ENT_B} robustly; {ENT_A} was used as a negative control in parallel wells."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "The dominant kinase for {ENT_B} is {ENT_X}; {ENT_A} was tested but had no effect in this assay."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_X}-mediated {VERB} of {ENT_B} was the primary observation; {ENT_A} appeared in adjacent unrelated panels."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_A} activity was monitored as a drug-class control while {ENT_X} {VERB} {ENT_B}."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_A} expression was unchanged across conditions; {ENT_X}-driven {ENT_B} {VERB} accounted for the phenotype."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "While {ENT_A} was profiled in the cohort, the pathway of interest involved {ENT_X} acting on {ENT_B}."

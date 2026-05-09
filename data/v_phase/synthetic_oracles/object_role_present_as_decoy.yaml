@@ -1,0 +1,17 @@
+# Synthetic-oracle templates for object_role = present_as_decoy.
+
+probe: object_role
+class: present_as_decoy
+templates:
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_A} {VERB} {ENT_X}; {ENT_B} was used as a loading control on the Western blot."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_A}-driven {ENT_X} regulation was observed; {ENT_B} antibodies served as a non-specific reference."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_B} was profiled as part of a marker panel while {ENT_A} {VERB} {ENT_X} in the same cells."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "While {ENT_B} levels were unchanged, the {ENT_A}-driven phenotype was tracked in {ENT_X}."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_B} has no detected function in this pathway; {ENT_A} {VERB} {ENT_X} regardless."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_B} appears in a parallel control panel; {ENT_A}-on-{ENT_X} dynamics dominate the phenotype."

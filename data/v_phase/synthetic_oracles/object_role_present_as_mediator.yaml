@@ -1,0 +1,18 @@
+# Synthetic-oracle templates for object_role = present_as_mediator.
+# Claim object is named as a chain intermediate.
+
+probe: object_role
+class: present_as_mediator
+templates:
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_A} signals through {ENT_B}, which subsequently {VERB} {ENT_X}."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_A} acts upstream of {ENT_B}; {ENT_B} then propagates activity to {ENT_X}."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_A} {VERB} {ENT_B}, which is required for downstream {ENT_X} regulation."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "Loss of {ENT_B} prevented {ENT_A}-induced {ENT_X} {VERB}, placing {ENT_B} as a chain node."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "{ENT_A} drives the cascade via {ENT_B}, ultimately reaching {ENT_X}."
+  - claim: "{ENT_B} (axis=activity, sign=positive, subject={ENT_A})"
+    evidence: "The {ENT_A}-dependent {ENT_B}-mediated {VERB} of {ENT_X} was reproducibly observed."

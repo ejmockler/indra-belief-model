@@ -1,0 +1,18 @@
+# Synthetic-oracle templates for scope = abstain.
+# Evidence does not commit to the relation (low information / fragments).
+
+probe: scope
+class: abstain
+templates:
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "We characterized {ENT_A} substrates in cycling cells."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "Previous studies suggest a role for {ENT_A} in this pathway."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "Future work will explore the function of {ENT_A} in greater depth."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "This is consistent with prior reports of {ENT_A} activity."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "Figure 3 shows {ENT_A} in the same fraction as other cytosolic proteins."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "Data not shown for {ENT_A}."

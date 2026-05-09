@@ -360,12 +360,17 @@ def _route_relation_axis(
       - Chain signal but no relation match → via_mediator_partial
       - No alias-resolved entities → escalate (subject/object_role probes already abstain)
       - Else → ProbeRequest with CATALOG hint
+
+    U5 (perturbation effective-sign propagation): when substrate detects
+    LOF on the subject, the effective claim sign is inverted. We
+    propagate this to BOTH (a) the substrate's own match check (line
+    `effective_sign = ...` below) and (b) the LLM probe's claim_component
+    string. Without (b), the LLM saw the literal claim sign and the
+    substrate saw the inverted one — causing the LLM to emit
+    direct_sign_mismatch on records where the substrate would have
+    matched. Closes the SGN stratum identified in S-phase v1 limitations.
     """
     obj = claim.objects[0] if claim.objects else claim.subject  # self-mod case
-    claim_component = (
-        f"({claim.subject}, {obj}) — claim axis={claim.axis}, "
-        f"sign={claim.sign}"
-    )
 
     aligned, swapped = _detected_relations_for_pair(ctx, claim.subject, obj)
 
@@ -380,6 +385,29 @@ def _route_relation_axis(
     effective_sign = claim.sign
     if ctx.subject_perturbation_marker == "loss_of_function":
         effective_sign = _invert_sign(claim.sign)
+
+    # U5: build the LLM-facing claim_component using the EFFECTIVE sign,
+    # not the literal claim sign. When the LLM probe has to choose between
+    # direct_sign_match and direct_sign_mismatch, it should evaluate
+    # against the perturbation-adjusted sign — what the substrate
+    # already does for its own matching. This closes the FN cases like
+    # "VHL silencing increased vimentin" where claim sign (negative) and
+    # effective sign (positive after LOF inversion) diverge.
+    perturbation_note = ""
+    if ctx.subject_perturbation_marker == "loss_of_function":
+        perturbation_note = (
+            f" [LOF perturbation on subject: claim_sign={claim.sign} "
+            f"inverted → effective_sign={effective_sign}]"
+        )
+    elif ctx.subject_perturbation_marker == "gain_of_function":
+        perturbation_note = (
+            f" [GOF perturbation on subject: sign preserved as "
+            f"{effective_sign}]"
+        )
+    claim_component = (
+        f"({claim.subject}, {obj}) — claim axis={claim.axis}, "
+        f"sign={effective_sign}{perturbation_note}"
+    )
 
     for dr in aligned:
         dr_axis = _normalize_axis(dr.axis)

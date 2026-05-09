@@ -32,58 +32,57 @@ Mapped to a continuous score: `{correct+high: 0.95, correct+medium: 0.80, ..., i
 
 ## How it works
 
-Model: gemma-4-26b (Ollama remote or local MLX 8-bit).
+Model: gemma-4-26b (Ollama remote or local MLX 8-bit) is the headline target; the registry in `model_client.py` carries other Gemma variants and Anthropic Claude is wired through the same `ModelClient` interface.
 
-### Two-tier architecture
+### Decomposed pipeline (production)
 
-**Tier 1: Deterministic grounding** (no LLM call)
+`score_evidence(statement, evidence, client)` routes every (Statement, Evidence) pair through five steps:
 
-| Status | Action | Example |
-|--------|--------|---------|
-| **MISMATCH** | Auto-reject | "RhoA" → RHOA != ARHGEF25 |
-| **PSEUDOGENE + AMBIGUOUS** | Auto-reject | "DVL" → DVL1P1 (pseudogene) |
-| **AMBIGUOUS** | Pass to Tier 2 | "9G8" → SRSF7/SLU7 (tied scores) |
-| **MATCH** | Pass to Tier 2 | "FAK" → PTK2 (confirmed alias) |
-
-**Tier 2: LLM text comprehension**
-
-- Six-rule system prompt (negation, hedging, family/member equivalence, etc.)
-- Seven adaptive contrastive pairs (14 examples) selected by statement type
-- Self-consistency voting (k=3 default, majority vote at temperature=0.6)
-
-### Adaptive few-shot selection
-
-The example bank has type-specific contrastive pairs. For each record, 7 pairs are selected by priority:
-
-1. **Own type** from bank (e.g., Activation pairs for an Activation claim)
-2. **Adjacent types** from `TYPE_ADJACENCY` map (e.g., IncreaseAmount for Activation)
-3. **Universal patterns** (logical inversion, hedging scope)
-4. **Fill** from the base contrastive pair set
-
-Types with bank examples: Activation (2 pairs), Inhibition (2), Phosphorylation, Complex, IncreaseAmount, DecreaseAmount, Dephosphorylation, Autophosphorylation, Translocation, Ubiquitination.
-
-### Self-consistency voting
-
-Model confidence scores are useless (100% report "high"). Self-consistency uses implicit confidence via agreement across k independent samples at temperature=0.6:
-
-```bash
-PYTHONPATH=src python -m indra_belief.scorers.scorer --voting-k 3
 ```
+parse_claim → build_context → parse_evidence → verify_grounding → adjudicate
+    ↓              ↓                 ↓                  ↓                ↓
+ deterministic deterministic     1 LLM call       1 LLM call       deterministic
+   (no LLM)    (Gilda + regex)                    (per entity)
+```
+
+Each step emits a typed commitment (`ClaimCommitment`, `EvidenceContext`, `EvidenceCommitment`, `GroundingVerdict`). The adjudicator reconciles them and returns a verdict with structured reason codes — no free-text rationalization. Disagreement surfaces as a typed reason (`absent_relationship`, `sign_mismatch`, `binding_domain_mismatch`, `hedging_hypothesis`, …), not a hidden vote tie.
+
+The decomposition is the load-bearing design choice: each sub-call is independently checkable, so the agreement signal that self-consistency voting was approximating comes from structural redundancy instead of sample averaging. Self-consistency voting was erased (P-phase) for the same reason.
+
+### Substrate-expansion doctrine (L / M / N phases)
+
+At 27B scale the LLM is reliable for local extraction but unreliable for: chains, counting, world-knowledge priors, cross-sentence antecedents, nominalization, and (under prompt pressure) attention to non-prominent subjects. Each LLM call also carries JSON-mode reasoning degradation (Tam 2024 ~10–15pp) and attention budget cost.
+
+Successive phases push signal out of the LLM and into a deterministic substrate threaded through `EvidenceContext`. The doctrine is recorded in `scorers/context.py` (top-of-module docstring). Briefly:
+
+- **L-phase**: chain-signal regex, subject/object semantic class (Gilda), bilateral-ambiguity precision, nominalization detection, multi-site union.
+- **M-phase**: relation surface-form catalog (`relation_patterns.py`), cascade-terminal detection, substrate-driven sign inversion under perturbation markers, alias normalization (Greek↔Latin, hyphen-strip), hypothesis-marker carve-out.
+- **N-phase**: written-form FPLX expansion (PKC/PKA/PKG/HDAC), hedge clause-bound proximity, substrate-driven inhibitor agent rewrite, **verifier-asymmetry break in `parse_evidence`** — the parser receives the claim entities as TOPICS OF INTEREST (an attention focus cue), not a verdict prompt; the schema still enforces literal extraction with literal signs.
+
+The N-phase doctrine break is documented at length in `scorers/context.py`; the architectural concession is that strict claim-blindness was lossy under attention pressure at 27B scale.
+
+### Monolithic scorer (research/ablation only)
+
+The single-call scorer still ships (`use_decomposed=False` to invoke directly, or `--use-monolithic` from the CLI). It uses a six-rule system prompt and an adaptive contrastive-pair bank keyed on `stmt_type`. It is preserved as the reference baseline; it is not the production path. Cross-path cascade was erased (P-phase) — the decomposed path stands alone.
 
 ## Design decisions we already paid for
 
 Earlier iterations measured the following approaches and rejected them. If you're considering a change that resembles one of these, check the data before re-proposing:
 
-| Approach | Outcome | Why it fails |
+| Approach | Outcome | Why it fails / what replaced it |
 |---|---|---|
-| Decomposed 3-call scorer | 65.9% accuracy | Natural-language extraction can't bridge INDRA's soft ontology boundaries — requires three LLMs to agree on a fuzzy contract |
+| Free-text decomposed scorer (3 LLMs, NL-mediated handoffs) | 65.9% on 50 records | Natural-language extraction couldn't bridge INDRA's soft ontology boundaries. **Replaced** by the typed-commitment decomposed pipeline (current production): each sub-call emits a frozen dataclass; the adjudicator runs deterministically on the structured output, not on free text. |
 | Native tool-calling (agentic lookup) | 84.9%, below baseline | Model ignores tool results after committing to a verdict in its first pass |
-| Structured provenance, full population | -6.7pp accuracy | Attention dilution on 26B model outweighs disambiguation benefit — selectively enabling provenance only for flagged-grounding records preserves the signal without the cost |
+| Structured provenance, full population | −6.7pp accuracy | Attention dilution on 26B model outweighs disambiguation benefit — selectively enabling provenance only for flagged-grounding records preserves the signal without the cost |
 | Graduated warnings for every grounding quirk | 3 regressions per 1 fix | Redirects attention from sentence comprehension; now limited to PSEUDOGENE and LOW_CONFIDENCE |
 | Indirect-evidence marker in the prompt | +5pp false negatives | Prejudices model toward rejection; removed |
-| LOW_CONFIDENCE auto-reject (blanket) | 53.6% precision at scale (32 false rejections on 3,754 records) | The gilda score threshold is too noisy to gate on deterministically; the signal is still available to the LLM as context |
+| LOW_CONFIDENCE auto-reject (blanket) | 53.6% precision at scale (32 false rejections on 3,754 records) | The Gilda score threshold is too noisy to gate on deterministically; the signal is still available to the LLM as context |
+| Self-consistency voting (k=3 default) | Compute 3× for stability, not accuracy | **Erased (P-phase)**. Demoted to k=1 default during M-phase, then deleted entirely. The agreement signal voting was approximating now comes from structural redundancy across the decomposed sub-calls. |
+| Cross-path cascade as default (`dec abstain → mono fallback`) | Erased the abstain signal | **Erased (P-phase)**. Cascade plumbing deleted entirely; decomposed abstention is calibrated semantic uncertainty, and routing it to the claim-aware monolithic path replaced principled abstain with a claim-biased guess. The monolithic path remains reachable for ablation via `use_decomposed=False`, but no longer serves as a fallback target. |
+| Strict claim-blind `parse_evidence` (verifier asymmetry) | Lossy under attention pressure at 27B scale | **N-phase doctrine break**: parser receives claim entities as TOPICS OF INTEREST (an attention focus cue, not a verdict prompt). Schema unchanged; literal extraction enforced; `assertions=[]` remains a valid output when the sentence asserts no topic-relevant relation. See `scorers/context.py` for the full doctrine. |
+| 3-tier `parse_evidence` retry (informed retry + decomposition-hint retry) | Catastrophic on degraded endpoints (12h, 112/501 records, 50 min/record on N9 holdout 2026-04-29 due to retries-on-timeout amplifying queue pressure) | **O-phase one-shot**: parse_evidence makes exactly one LLM call per evidence (or N calls per multi-clause input via per-clause structural decomposition). Retries gone — the L/M/N substrate-fallback bind in adjudicate covers the failure classes the retries were compensating for. Mirrors H3's demotion of self-consistency voting: reliability comes from structural redundancy, not sample-level retry. See `scorers/context.py` O-phase doctrine. |
 
-Headline baselines measured during iteration: gemma-4-26b + adaptive bank + voting reaches ~84% accuracy on the 501-record stratified sample. Small-holdout numbers (200 records) overstate by ~4-5pp relative to large-scale evaluation (3,000+ records) — check the larger set before celebrating.
+Headline baseline: the monolithic scorer with the adaptive contrastive-pair bank reaches ~84% accuracy on the 501-record stratified sample (gemma-4-26b). The decomposed pipeline's value proposition is **interpretability** (structured reason codes, attributable sub-call failures) at parity-or-better; per-phase holdout numbers and verdicts live in `data/results/`. Small-holdout numbers (200 records) overstate by ~4–5pp relative to large-scale evaluation (3,000+ records) — check the larger set before celebrating.
 
 ## Setup
 
@@ -225,9 +224,10 @@ PYTHONPATH=src python -m indra_belief.scorers.scorer \
     --model gemma-remote \
     --holdout data/benchmark/holdout_large.jsonl \
     --output data/results/run.jsonl \
-    --voting-k 3 \
     --resume data/results/run.jsonl  # resume interrupted runs
 ```
+
+The decomposed pipeline (parse_claim → context → parse_evidence → grounding → adjudicate) runs by default. Pass `--use-monolithic` to run the legacy single-call baseline for ablation.
 
 ## How we iterate
 
@@ -242,30 +242,48 @@ Contributor-facing rules to keep the repository legible:
 
 ```
 src/indra_belief/
-  model_client.py          # Model transport (OpenAI-compat + Anthropic)
-  noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
-  composed_scorer.py       # LLM verdict → hard gate over the parametric noise model
+  model_client.py            # Model transport (OpenAI-compat + Anthropic)
+  noise_model.py             # INDRA SimpleScorer (parametric belief from source priors)
+  composed_scorer.py         # LLM verdict → hard gate over the parametric noise model
   scorers/
-    scorer.py              # The scorer — native INDRA, adaptive bank, voting
-    _prompts.py            # System prompt, contrastive examples, verdict parser
+    scorer.py                # Public API: score_evidence / score_statement (dec default)
+    _prompts.py              # Monolithic system prompt + contrastive bank (research/ablation)
+    # --- Decomposed pipeline (production) ---
+    commitments.py           # Typed sub-call schemas (ClaimCommitment, EvidenceCommitment, …)
+    parse_claim.py           # Deterministic claim → ClaimCommitment (no LLM)
+    context.py               # EvidenceContext + L/M/N-phase doctrine
+    context_builder.py       # build_context (Gilda + regex substrate; no LLM)
+    parse_evidence.py        # 1-LLM-call evidence parse → EvidenceCommitment
+    grounding.py             # Per-entity grounding verifier
+    relation_patterns.py     # Regex catalog for relation surface forms (M-phase)
+    adjudicate.py            # Deterministic verdict reconciliation + reason codes
+    decomposed.py            # score_evidence_decomposed: orchestrates the pipeline
   data/
-    entity.py              # GroundedEntity: single gilda resolution per entity
-    scoring_record.py      # ScoringRecord: wraps INDRA Statement + Evidence
-    corpus.py              # CorpusIndex: source_hash → Statement lookup
-    example_bank.json      # Type-specific contrastive pairs
+    entity.py                # GroundedEntity: single Gilda resolution per entity
+    scoring_record.py        # ScoringRecord: wraps INDRA Statement + Evidence
+    corpus.py                # CorpusIndex: source_hash → Statement lookup
+    example_bank.json        # Monolithic contrastive pairs (still used by mono path)
   tools/
-    gilda_tools.py         # Entity lookup helper (pre-computed, injected into prompt)
+    gilda_tools.py           # Entity lookup helper (pre-computed, injected into prompt)
 
 data/
   benchmark/
-    holdout.jsonl          # 200-record balanced evaluation set
-    holdout_large.jsonl    # 4,625-record half-corpus evaluation
-    example_pairs.json     # Entity pairs excluded from holdouts
-  results/                 # Evaluation results
+    holdout.jsonl            # 200-record balanced evaluation set
+    holdout_v15_sample.jsonl # 501-record stratified sample (mono v15 baseline)
+    holdout_large.jsonl      # 4,625-record half-corpus evaluation
+    calibration_*.jsonl      # FN/FP calibration sets (per-pattern accuracy)
+    example_pairs.json       # Entity pairs excluded from holdouts
+  results/                   # Evaluation results (one file per locked baseline)
 
 scripts/
   check_contamination.py        # Pre-eval gate: examples must not overlap holdout
   check_no_version_labels.py    # CI guard: no v{n} labels in src, tests, scripts
+  d4_overfit_check.py           # Held-back overfit gate (dec path; --use-monolithic for ablation)
+  dual_run.py                   # Side-by-side mono vs dec on a stratified sample
+  m13_analyze.py                # M-phase holdout analysis (pre-registered ship verdict)
+
+research/
+  unified/                      # Archived single-call unified scorer (B/C/D phases)
 
 .github/workflows/
   ci.yml                        # pytest + both guards on every push and PR

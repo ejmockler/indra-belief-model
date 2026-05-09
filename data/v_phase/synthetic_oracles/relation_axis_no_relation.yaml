@@ -1,0 +1,18 @@
+# Synthetic-oracle templates for relation_axis = no_relation.
+# Both entities mentioned but no relation asserted.
+
+probe: relation_axis
+class: no_relation
+templates:
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} expression was normalized to {ENT_B} by Western blot in the analysis."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "We characterized {ENT_A} substrates in cycling cells and used {ENT_B} as a loading control."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} and {ENT_B} were both detected in the cytosol, but no functional relationship was investigated."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=modification, sign=positive"
+    evidence: "Cell lines were treated with {ENT_A}-specific siRNA; {ENT_B} antibodies were used for staining only."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A}, {ENT_B}, and three other markers were profiled in the cohort with no inter-entity comparison."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "Inhibitor against {ENT_A} was added; {ENT_B} levels were monitored as part of an unrelated control."

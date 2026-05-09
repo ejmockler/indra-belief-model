@@ -17,6 +17,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from dataclasses import replace as _dc_replace
+
+from indra_belief.scorers import kg_signal as _kg_signal
 from indra_belief.scorers.commitments import (
     Adjudication,
     ClaimCommitment,
@@ -58,13 +61,75 @@ _PROBE_HANDLERS = {
 
 def _resolve_probe(
     routing: ProbeResponse | ProbeRequest, client: "ModelClient",
+    *, reasoning_effort: str = "none",
 ) -> ProbeResponse:
     """If substrate already answered, return its ProbeResponse. Otherwise
-    invoke the probe's LLM module to answer the ProbeRequest."""
+    invoke the probe's LLM module to answer the ProbeRequest.
+
+    U3 selective reasoning: pass reasoning_effort="medium" on escalation.
+    Substrate-answered probes are unaffected (no LLM call).
+    """
     if isinstance(routing, ProbeResponse):
         return routing
     handler = _PROBE_HANDLERS[routing.kind]
-    return handler(routing, client)
+    return handler(routing, client, reasoning_effort=reasoning_effort)
+
+
+# U3 escalation triggers — refined post-U12 first observation:
+# grounding_gap escalation is wasteful (entity absence is structural,
+# not reasoning-bound). The escalation is targeted at relation_axis
+# and scope reasoning, not subject/object grounding.
+#
+# Reasons that benefit from reasoning escalation:
+_ESCALATE_REASONS_RELATION = frozenset({
+    "indirect_chain",            # chain detection benefits from longer reasoning
+    "chain_extraction_gap",      # mediator extraction needs more thought
+    "relation_underdetermined",  # axis underdetermined → more reading helps
+})
+_ESCALATE_REASONS_SCOPE = frozenset({
+    "hedging_hypothesis",        # hedge classification benefits from reasoning
+    "upstream_attribution",      # chain context helps scope decision
+})
+
+# Reasons we explicitly DO NOT escalate (structural / unaddressable by reasoning):
+_NO_ESCALATE_REASONS = frozenset({
+    "grounding_gap",       # entity absence — U6 prompt is the fix, not reasoning
+    "absent_relationship", # already a substantive verdict
+    "match",               # already correct/high
+})
+
+
+def _escalation_targets(adj: Adjudication) -> set[str]:
+    """Return the set of probe kinds to re-run at higher reasoning,
+    based on what drove the first-pass uncertainty. Empty set = no escalation.
+
+    Keys: 'subject_role', 'object_role', 'relation_axis', 'scope'.
+    """
+    targets: set[str] = set()
+    if adj.verdict == "abstain":
+        # Reasons drive specific probes:
+        for r in adj.reasons:
+            if r in _NO_ESCALATE_REASONS:
+                # Explicit skip — don't escalate this probe.
+                continue
+            if r in _ESCALATE_REASONS_RELATION:
+                targets.add("relation_axis")
+                targets.add("scope")
+            elif r in _ESCALATE_REASONS_SCOPE:
+                targets.add("scope")
+        # Abstain with NO reasons (defensive path): escalate all four
+        # since we don't know what failed.
+        if not adj.reasons:
+            targets = {"subject_role", "object_role",
+                       "relation_axis", "scope"}
+    elif adj.verdict in ("correct", "incorrect") and adj.confidence == "low":
+        # Low-confidence verdict — escalate the probe(s) tied to the reason.
+        for r in adj.reasons:
+            if r in _ESCALATE_REASONS_RELATION:
+                targets.add("relation_axis")
+            elif r in _ESCALATE_REASONS_SCOPE:
+                targets.add("scope")
+    return targets
 
 
 def _resolve_claim_entities(claim: ClaimCommitment, evidence) -> list:
@@ -197,6 +262,20 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
         )
         ctx = EvidenceContext()
 
+    # 2b. U4: KG signal lookup (substrate-only, no LLM call). Confidence
+    # modifier only — never overrides verdict. Q-phase failure mode is
+    # the line we don't cross.
+    try:
+        if claim.objects:
+            sig = _kg_signal.get_signal(
+                claim.subject, claim.objects[0], claim.axis,
+            )
+            if sig is not None:
+                ctx = _dc_replace(ctx, kg_signal=sig)
+    except Exception as e:
+        # Defensive — KG lookup failures must NEVER break scoring.
+        log.warning("orchestrator: kg_signal lookup failed: %s", e)
+
     # 3. Route every probe through substrate (deterministic answers
     #    where possible; LLM requests otherwise).
     routings = router.substrate_route(claim, ctx, evidence_text)
@@ -221,7 +300,63 @@ def score_via_probes(statement, evidence, client: "ModelClient") -> dict:
                         e, gex)
     groundings = tuple(grounding_list)
 
-    # 6. Pure-function adjudicator.
+    # 6. Pure-function adjudicator (first-pass).
     adj = adjudicate(claim, bundle, groundings, ctx=ctx)
+
+    # 7. U3 selective reasoning escalation. Only re-run probes that
+    #    drove the first-pass uncertainty (NOT all 4 — that was wasteful
+    #    per U12 first-observation finding). Skip escalation on
+    #    grounding_gap (structural absence; reasoning won't help — U6 is
+    #    the fix). Substrate-answered probes are unaffected (no LLM call
+    #    even on escalation since they have ProbeResponse, not ProbeRequest).
+    targets = _escalation_targets(adj)
+    if targets:
+        log.info(
+            "orchestrator: escalating %s (verdict=%s, reasons=%s)",
+            sorted(targets), adj.verdict, adj.reasons,
+        )
+        # Re-resolve only the targeted probes; reuse first-pass for others.
+        new_subj = (
+            _resolve_probe(routings["subject_role"], client,
+                           reasoning_effort="medium")
+            if "subject_role" in targets else bundle.subject_role
+        )
+        new_obj = (
+            _resolve_probe(routings["object_role"], client,
+                           reasoning_effort="medium")
+            if "object_role" in targets else bundle.object_role
+        )
+        new_ra = (
+            _resolve_probe(routings["relation_axis"], client,
+                           reasoning_effort="medium")
+            if "relation_axis" in targets else bundle.relation_axis
+        )
+        new_sc = (
+            _resolve_probe(routings["scope"], client,
+                           reasoning_effort="medium")
+            if "scope" in targets else bundle.scope
+        )
+        bundle_v2 = ProbeBundle(
+            subject_role=new_subj, object_role=new_obj,
+            relation_axis=new_ra, scope=new_sc,
+        )
+        adj_v2 = adjudicate(claim, bundle_v2, groundings, ctx=ctx)
+        # Use escalated verdict only if it strictly improves uncertainty:
+        # - first abstain → second non-abstain: improvement, take v2.
+        # - first low-confidence → second medium/high on same verdict:
+        #   improvement, take v2.
+        # - otherwise: keep first-pass.
+        improved = False
+        if adj.verdict == "abstain" and adj_v2.verdict != "abstain":
+            improved = True
+        elif (
+            adj.verdict == adj_v2.verdict
+            and adj.confidence == "low"
+            and adj_v2.confidence in ("medium", "high")
+        ):
+            improved = True
+        if improved:
+            adj = adj_v2
+            bundle = bundle_v2
 
     return _format_output(adj, groundings, bundle, _pop())

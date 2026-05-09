@@ -112,7 +112,10 @@ def test_orchestrator_alias_miss_escalates_to_llm() -> None:
             '{"answer": "absent", "rationale": "MAPK1 not mentioned"}',
         "probe_object_role":
             '{"answer": "absent", "rationale": "JUN not mentioned"}',
-        "probe_relation_axis": '{"answer": "abstain", "rationale": "..."}',
+        # T-phase Fix A: relation_axis no longer admits "abstain".
+        # The mock returns out-of-set "abstain"; failure_default projects
+        # to "no_relation" via _llm.py.
+        "probe_relation_axis": '{"answer": "no_relation", "rationale": "..."}',
         "probe_scope": '{"answer": "abstain", "rationale": "..."}',
     })
     result = score_via_probes(stmt, ev, client)

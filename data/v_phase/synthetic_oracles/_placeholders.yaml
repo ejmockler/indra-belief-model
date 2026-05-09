@@ -1,0 +1,120 @@
+# V6d synthetic-oracle placeholder pool (V5r §6, §10).
+#
+# Names are deliberately fake (do NOT appear in HGNC / UniProt / FPLX). They
+# follow biomedical-shape conventions (camel-case + numeric suffix; greek
+# placeholders) so the LLM cannot pattern-match to a real symbol while
+# training. Verified against indra_belief.data.entity.GroundedEntity.resolve
+# returning canonical=None for each name listed below.
+#
+# These placeholder pools are referenced from the per-(probe, class) template
+# YAMLs to keep edits centralized.
+
+ent_a:
+  - placeholder_GeneA_001
+  - placeholder_GeneA_002
+  - placeholder_GeneA_003
+  - placeholder_GeneA_004
+  - placeholder_GeneA_005
+  - kinase_alpha_42
+  - kinase_alpha_71
+  - kinase_alpha_88
+  - factor_gamma_3
+  - factor_gamma_19
+  - factor_gamma_24
+  - regulator_eta_11
+  - regulator_eta_55
+  - adaptor_zeta_7
+  - adaptor_zeta_31
+  - receptor_theta_14
+  - receptor_theta_29
+  - phosphatase_omicron_5
+  - phosphatase_omicron_18
+  - ligase_psi_2
+  - ligase_psi_44
+  - transducer_iota_8
+  - transducer_iota_36
+  - SignalQ_001
+  - SignalQ_017
+  - EnzymeP_004
+  - EnzymeP_022
+  - CytokineW_111
+  - CytokineW_206
+  - DocrineX_063
+
+ent_b:
+  - placeholder_GeneB_001
+  - placeholder_GeneB_002
+  - placeholder_GeneB_003
+  - placeholder_GeneB_004
+  - placeholder_GeneB_005
+  - target_beta_17
+  - target_beta_38
+  - target_beta_92
+  - substrate_delta_4
+  - substrate_delta_29
+  - substrate_delta_77
+  - effector_omega_6
+  - effector_omega_45
+  - downstream_xi_15
+  - downstream_xi_53
+  - subunit_chi_23
+  - subunit_chi_71
+  - cofactor_mu_9
+  - cofactor_mu_42
+  - assembly_nu_2
+  - assembly_nu_27
+  - protein_lambda_13
+  - protein_lambda_46
+  - GeneZ_002
+  - GeneZ_023
+  - TargetA_007
+  - TargetA_034
+  - SubstrateB_120
+  - SubstrateB_205
+  - PartnerC_088
+
+ent_x:
+  - placeholder_Mediator_001
+  - placeholder_Mediator_002
+  - kinase_mu_27
+  - kinase_mu_61
+  - adaptor_phi_12
+  - adaptor_phi_47
+  - intermediate_tau_8
+  - intermediate_tau_33
+  - bridge_sigma_19
+  - bridge_sigma_55
+  - relay_rho_3
+  - relay_rho_28
+  - mediator_pi_15
+  - mediator_pi_50
+  - cofactor_kappa_9
+  - cofactor_kappa_44
+  - ScaffoldS_004
+  - ScaffoldS_037
+  - ChaperoneT_022
+  - ChaperoneT_065
+
+verb:
+  - phosphorylates
+  - dephosphorylates
+  - acetylates
+  - methylates
+  - ubiquitinates
+  - sumoylates
+  - cleaves
+  - regulates
+  - induces
+  - suppresses
+
+dna_element:
+  - the consensus DNA-binding motif
+  - the proximal promoter region
+  - a GC-box element
+  - the distal enhancer site
+  - the CpG island
+  - a putative E-box motif
+  - the response-element sequence
+  - a putative palindromic site
+  - the kappaB-like regulatory element
+  - the proximal initiator motif

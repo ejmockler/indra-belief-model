@@ -1,0 +1,18 @@
+# Synthetic-oracle templates for verify_grounding = uncertain.
+# Ambiguous mention or fragmentary evidence.
+
+probe: verify_grounding
+class: uncertain
+templates:
+  - claim: "Claim entity: {ENT_A}\nGrounding: <none — possibly a generic class noun>"
+    evidence: "It was found in fraction III."
+  - claim: "Claim entity: {ENT_A}\nGrounding: <none — possibly a generic class noun>"
+    evidence: "The factor."
+  - claim: "Claim entity: {ENT_A}\nGrounding: <none — possibly a generic class noun>"
+    evidence: "{ENT_A}? The original report's identification is unresolved."
+  - claim: "Claim entity: {ENT_A}\nGrounding: <none — possibly a generic class noun>"
+    evidence: "Some {ENT_A} candidates were tested but the identities are not specified."
+  - claim: "Claim entity: {ENT_A}\nGrounding: <none — possibly a generic class noun>"
+    evidence: "{ENT_A} or {ENT_B} (could not be distinguished by the antibody used)."
+  - claim: "Claim entity: {ENT_A}\nGrounding: <none — possibly a generic class noun>"
+    evidence: "The protein."

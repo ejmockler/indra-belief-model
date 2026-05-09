@@ -1,0 +1,134 @@
+[
+  {
+    "case": "hedge_scope_ambiguity",
+    "differs": true,
+    "t_off": 7.911842107772827,
+    "t_on": 90.0104992389679,
+    "off": {
+      "n": 4,
+      "assertions": [
+        {
+          "agents": [
+            "IFNG"
+          ],
+          "targets": [
+            "STAT1"
+          ],
+          "axis": "activity",
+          "sign": "positive",
+          "negation": false,
+          "claim_status": "asserted"
+        },
+        {
+          "agents": [
+            "receptor chain"
+          ],
+          "targets": [
+            "STAT1"
+          ],
+          "axis": "activity",
+          "sign": "positive",
+          "negation": false,
+          "claim_status": "asserted"
+        },
+        {
+          "agents": [
+            "receptor chain"
+          ],
+          "targets": [
+            "receptor chain"
+          ],
+          "axis": "amount",
+          "sign": "positive",
+          "negation": false,
+          "claim_status": "asserted"
+        },
+        {
+          "agents": [
+            "pharmacological agents"
+          ],
+          "targets": [
+            "IFNG receptor signal transduction"
+          ],
+          "axis": "activity",
+          "sign": "positive",
+          "negation": false,
+          "claim_status": "hedged"
+        }
+      ]
+    },
+    "on": {
+      "assertions": [],
+      "n": 0,
+      "raw": "ABSTAIN"
+    }
+  },
+  {
+    "case": "perturbation_inversion_check",
+    "differs": true,
+    "t_off": 13.075423002243042,
+    "t_on": 90.00546002388,
+    "off": {
+      "n": 3,
+      "assertions": [
+        {
+          "agents": [
+            "VHL"
+          ],
+          "targets": [
+            "N-cadherin"
+          ],
+          "axis": "amount",
+          "sign": "positive",
+          "negation": false,
+          "claim_status": "asserted"
+        },
+        {
+          "agents": [
+            "VHL"
+          ],
+          "targets": [
+            "vimentin"
+          ],
+          "axis": "amount",
+          "sign": "positive",
+          "negation": false,
+          "claim_status": "asserted"
+        },
+        {
+          "agents": [
+            "VHL"
+          ],
+          "targets": [
+            "E-cadherin"
+          ],
+          "axis": "amount",
+          "sign": "negative",
+          "negation": false,
+          "claim_status": "asserted"
+        }
+      ]
+    },
+    "on": {
+      "assertions": [],
+      "n": 0,
+      "raw": "ABSTAIN"
+    }
+  },
+  {
+    "case": "substrate_axis_mismatch_proxy",
+    "differs": false,
+    "t_off": 90.00680017471313,
+    "t_on": 90.00539088249207,
+    "off": {
+      "assertions": [],
+      "n": 0,
+      "raw": "ABSTAIN"
+    },
+    "on": {
+      "assertions": [],
+      "n": 0,
+      "raw": "ABSTAIN"
+    }
+  }
+]

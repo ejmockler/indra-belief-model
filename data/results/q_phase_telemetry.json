@@ -1,0 +1,101 @@
+{
+  "n_records": 501,
+  "accuracy": 0.7014028056112225,
+  "decided": 499,
+  "correct": 350,
+  "delta_vs_m12_pp": -4.8097194388777575,
+  "fp_rate": 0.1574074074074074,
+  "fp_delta_pp": 1.8518518518518516,
+  "gates": {
+    "acc\u226579%": false,
+    "|FP \u0394|\u22641.0pp": false,
+    "p99 wall \u2264300s": true,
+    "parse_evidence in_tok \u22642000": false
+  },
+  "verdict_overall": "FAIL",
+  "telemetry": {
+    "by_kind": {
+      "parse_evidence": {
+        "n_calls": 524,
+        "duration_s": {
+          "median": 4.95,
+          "p99": 27.33,
+          "max": 41.34
+        },
+        "prompt_tokens": {
+          "median": 3767,
+          "p99": 3907
+        },
+        "out_tokens": {
+          "median": 364,
+          "p99": 2314,
+          "max": 3534
+        },
+        "prompt_chars_median": 14715
+      },
+      "verify_grounding": {
+        "n_calls": 978,
+        "duration_s": {
+          "median": 1.19,
+          "p99": 1.5,
+          "max": 1.58
+        },
+        "prompt_tokens": {
+          "median": 1147,
+          "p99": 1283
+        },
+        "out_tokens": {
+          "median": 39,
+          "p99": 58,
+          "max": 66
+        },
+        "prompt_chars_median": 4420
+      }
+    },
+    "record_duration_s": {
+      "median": 7.18,
+      "p99": 29.68,
+      "max": 43.45
+    },
+    "finish_reasons": {
+      "stop": 1502
+    },
+    "errors": {},
+    "n_records": 501
+  },
+  "trace_class": [
+    {
+      "pair": "PKC\u2192EIF4E",
+      "found": 1,
+      "verdicts": {
+        "correct": 1
+      },
+      "targets": {
+        "correct": 1
+      },
+      "wrong": 0
+    },
+    {
+      "pair": "RADIL\u2192Integrins",
+      "found": 1,
+      "verdicts": {
+        "incorrect": 1
+      },
+      "targets": {
+        "correct": 1
+      },
+      "wrong": 1
+    },
+    {
+      "pair": "MEK\u2192MAPK1",
+      "found": 2,
+      "verdicts": {
+        "correct": 2
+      },
+      "targets": {
+        "correct": 2
+      },
+      "wrong": 0
+    }
+  ]
+}

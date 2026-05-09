@@ -216,10 +216,13 @@ def test_relation_axis_partner_mismatch() -> None:
     assert resp.answer == "direct_partner_mismatch"
 
 
-def test_relation_axis_legitimate_abstain() -> None:
-    """LLM may legitimately answer 'abstain' for relation_axis (it's
-    in the answer set). Source should be 'llm' since the LLM did
-    return a valid answer."""
+def test_relation_axis_underdetermined_projects_to_no_relation() -> None:
+    """T-phase Fix A: 'abstain' is no longer in relation_axis answer set.
+    If the LLM emits 'abstain' (out-of-set), _llm.py's failure_default
+    mechanism projects to 'no_relation' and treats it as a successful
+    classification (source='llm'). Out-of-set string answers go through
+    success-with-projection; only transport/JSON/empty failures source
+    'abstain'. Doctrine §3.1."""
     client = _MockClient(
         response_content='{"answer": "abstain", '
                          '"rationale": "JUN not mentioned"}'
@@ -230,8 +233,27 @@ def test_relation_axis_legitimate_abstain() -> None:
         evidence_text="We characterized MAPK1 substrates in cycling cells.",
     )
     resp = relation_axis.answer(req, client)
-    assert resp.answer == "abstain"
-    assert resp.source == "llm"  # legitimate LLM-emitted abstain
+    assert resp.answer == "no_relation"  # projected via failure_default
+    assert resp.source == "llm"          # LLM responded; just out-of-set
+
+
+def test_relation_axis_transport_failure_sources_abstain() -> None:
+    """T-phase Fix A discrimination: actual LLM failures (transport,
+    empty response) still result in source='abstain'. Only out-of-set
+    string answers go through success-with-projection."""
+    class _RaisingClient:
+        def call(self, **kwargs):
+            raise TimeoutError("simulated")
+
+    client = _RaisingClient()
+    req = ProbeRequest(
+        kind="relation_axis",
+        claim_component="(MAPK1, JUN) — claim axis=activity, sign=positive",
+        evidence_text="MAPK1 activates JUN.",
+    )
+    resp = relation_axis.answer(req, client)
+    assert resp.answer == "no_relation"  # projected via failure_default
+    assert resp.source == "abstain"      # transport failure
 
 
 def test_relation_axis_kind_mismatch_raises() -> None:

@@ -42,6 +42,15 @@ ObjectRoleAnswer = SubjectRoleAnswer
 
 RelationAxisAnswer = Literal[
     "direct_sign_match",       # relation present on claim axis with claim sign
+                               # — generic catch-all for axes other than amount.
+    # U-phase U7 (Intervention E): explicit amount-axis match. Distinguishes
+    # "X overexpression increased Y protein" (direct_amount_match) from
+    # "X activates Y" (direct_sign_match for activity claims). Adjudicator
+    # gates per-axis: Activation/Inhibition + direct_amount_match →
+    # axis_mismatch; IncreaseAmount/DecreaseAmount + direct_amount_match →
+    # match. Targets the act_vs_amt class (24 records, 41.7% T-phase acc).
+    "direct_amount_match",     # evidence describes expression/abundance change
+                               # — preferred over direct_sign_match for amount.
     "direct_sign_mismatch",    # relation present on claim axis with opposite sign
     "direct_axis_mismatch",    # relation present but on different axis
     "direct_partner_mismatch", # binding axis present but partner type wrong
@@ -49,12 +58,22 @@ RelationAxisAnswer = Literal[
     "via_mediator",            # relation via intermediate (indirect chain)
     "via_mediator_partial",    # chain detected but terminal entity unresolved
     "no_relation",             # no relation between resolved entities
-    "abstain",                 # text underdetermines
+    # T-phase Fix A: "abstain" removed. The probe must commit to one of
+    # the eight substantive labels. When uncertain, prefer "no_relation".
+    # Adjudicator's defensive scope-tiebreaker handles any straggler via
+    # _failure_fallback projection in _llm.py.
 ]
 
 ScopeAnswer = Literal[
     "asserted",  # unconditionally claimed
     "hedged",    # claimed under hypothesis / may / might / proposed / likely
+    # U-phase U7 (Intervention E): conditional-mutant assertion. Captures
+    # "X binds wild-type Y, but not the mutant Y" cases where the relation
+    # IS asserted on the qualified entity. Adjudicator treats like
+    # asserted-but-confidence-medium (the conditionality is informational,
+    # not a verdict-level negation). Targets ~5 contradicted FN records
+    # from T-phase scope.py CRITICAL block insufficient handling.
+    "asserted_with_condition",
     "negated",   # explicitly denied ("X did NOT activate Y")
     "abstain",   # text does not commit
 ]

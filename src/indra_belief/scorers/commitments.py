@@ -53,6 +53,8 @@ GroundingStatus = Literal[
 ]
 
 # S-phase reason codes (per doctrine §5.5; deferred codes removed).
+# T-phase additions: relation_underdetermined (Fix A defensive tiebreaker),
+# upstream_attribution (Fix B Phosphorylation+via_mediator → correct/low).
 ReasonCode = Literal[
     "match",                  # asserted relation matches claim
     "axis_mismatch",          # claim and evidence describe different kinds of change
@@ -66,6 +68,8 @@ ReasonCode = Literal[
     "binding_domain_mismatch", # binding-axis but wrong partner type
     "chain_extraction_gap",   # chain markers present but no extractable mediator
     "regex_substrate_match",  # final-arm CATALOG fallback rescued an abstain
+    "relation_underdetermined", # T-phase Fix A: axis+scope both underdetermined
+    "upstream_attribution",   # T-phase Fix B: Phosphorylation accepts indirect chain
 ]
 
 Verdict = Literal["correct", "incorrect", "abstain"]

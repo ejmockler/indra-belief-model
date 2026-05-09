@@ -1,0 +1,23 @@
+# Synthetic-oracle templates for relation_axis = direct_partner_mismatch.
+# Binding-axis claim where evidence describes binding to a non-protein
+# partner (DNA element / RNA / lipid).
+
+probe: relation_axis
+class: direct_partner_mismatch
+templates:
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} binds {DNA_ELEMENT} of the {ENT_B} gene to drive transcription."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} occupies {DNA_ELEMENT} upstream of the {ENT_B} locus, recruiting basal machinery."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} engages {DNA_ELEMENT} located within the first intron of the {ENT_B} gene."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} associates with the {ENT_B} mRNA 3' UTR, consistent with post-transcriptional regulation."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} contacts {DNA_ELEMENT} flanking the {ENT_B} TSS, as shown by ChIP-seq."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} interacts with the {ENT_B} promoter via a sequence-specific DNA-binding domain."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} attaches to membrane phospholipids in proximity to the {ENT_B} signaling complex."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} engages a long non-coding RNA that competes with {ENT_B} for downstream targets."

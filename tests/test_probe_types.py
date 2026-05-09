@@ -49,11 +49,19 @@ def test_object_role_valid_answers(answer: str) -> None:
     "via_mediator",
     "via_mediator_partial",
     "no_relation",
-    "abstain",
+    # T-phase Fix A: "abstain" removed from RelationAxisAnswer.
 ])
 def test_relation_axis_valid_answers(answer: str) -> None:
     r = ProbeResponse(kind="relation_axis", answer=answer, source="substrate")
     assert r.answer == answer
+
+
+def test_relation_axis_rejects_abstain_answer() -> None:
+    """T-phase Fix A: relation_axis no longer admits 'abstain' as an answer.
+    Probe modules must commit to one of the seven substantive labels;
+    underdetermined evidence projects to 'no_relation'."""
+    with pytest.raises(ValueError, match="answer"):
+        ProbeResponse(kind="relation_axis", answer="abstain", source="llm")
 
 
 @pytest.mark.parametrize("answer", ["asserted", "hedged", "negated", "abstain"])
@@ -207,7 +215,7 @@ def test_bundle_rejects_misslotted_scope() -> None:
             subject_role=_r("subject_role", "present_as_subject"),
             object_role=_r("object_role", "present_as_object"),
             relation_axis=_r("relation_axis", "direct_sign_match"),
-            scope=_r("relation_axis", "abstain"),
+            scope=_r("relation_axis", "no_relation"),
         )
 
 

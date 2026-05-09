@@ -91,8 +91,13 @@ _FEW_SHOTS: list[tuple[str, str]] = [
 
 def answer(
     request: ProbeRequest, client: "ModelClient",
+    *, reasoning_effort: str = "none",
 ) -> ProbeResponse:
-    """Resolve an object_role probe via LLM closed-set classification."""
+    """Resolve an object_role probe via LLM closed-set classification.
+
+    U3 selective reasoning: pass reasoning_effort="medium" to escalate
+    on hard cases.
+    """
     if request.kind != "object_role":
         raise ValueError(
             f"object_role.answer received kind={request.kind!r}"
@@ -112,6 +117,7 @@ def answer(
         answer_set=_ANSWER_SET,
         kind="object_role",
         client=client,
+        reasoning_effort=reasoning_effort,
     )
     return ProbeResponse(
         kind="object_role",

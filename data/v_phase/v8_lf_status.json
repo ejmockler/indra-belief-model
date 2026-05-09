@@ -1,0 +1,791 @@
+{
+  "per_lf": [
+    {
+      "lf_name": "lf_substrate_catalog_match",
+      "probe": "relation_axis",
+      "v7a_acc": 0.92,
+      "v7a_n_fires": 75,
+      "v7a_status": "PASS",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 14,
+      "v7b_ci_lo": 0.7846829880728186,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "direct_sign_match": 14
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_substrate_negation_regex",
+      "probe": "relation_axis",
+      "v7a_acc": 0.125,
+      "v7a_n_fires": 8,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 11,
+      "v7b_ci_lo": 2.7755575615628914e-17,
+      "v7b_ci_hi": 0.2588400172488141,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "direct_sign_mismatch": 11
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_chain_no_terminal",
+      "probe": "relation_axis",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 53,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 13,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.22810184305529166,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "via_mediator_partial": 13
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_partner_substrate_gate",
+      "probe": "relation_axis",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 5,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.43449149475208104,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "direct_partner_mismatch": 5
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_curated_db_axis",
+      "probe": "relation_axis",
+      "v7a_acc": 1.0,
+      "v7a_n_fires": 3,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 5,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.43449149475208104,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "direct_sign_match": 5
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_reach_found_by_axis_match",
+      "probe": "relation_axis",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.7,
+      "v7b_n_fires": 10,
+      "v7b_ci_lo": 0.39677321997956516,
+      "v7b_ci_hi": 0.892210712513788,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "direct_sign_match": 8,
+        "direct_sign_mismatch": 2
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_reach_found_by_axis_mismatch",
+      "probe": "relation_axis",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_epistemics_direct_true",
+      "probe": "relation_axis",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.8333333333333334,
+      "v7b_n_fires": 6,
+      "v7b_ci_lo": 0.43649056343635395,
+      "v7b_ci_hi": 0.9699474141282697,
+      "v7b_status": "MARGINAL",
+      "v7b_vote_distribution": {
+        "direct_sign_match": 6
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_epistemics_direct_false",
+      "probe": "relation_axis",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 13,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.22810184305529166,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "via_mediator": 13
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_multi_extractor_axis_agreement",
+      "probe": "relation_axis",
+      "v7a_acc": 0.708904109589041,
+      "v7a_n_fires": 292,
+      "v7a_status": "PASS",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_amount_lexical",
+      "probe": "relation_axis",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 18,
+      "v7a_status": "FAIL",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_amount_keyword_negative",
+      "probe": "relation_axis",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 2,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_chain_with_named_intermediate",
+      "probe": "relation_axis",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 1,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_no_entity_overlap",
+      "probe": "relation_axis",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 13,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.6,
+      "v7b_n_fires": 5,
+      "v7b_ci_lo": 0.23071993220883708,
+      "v7b_ci_hi": 0.8823817688407467,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "no_relation": 5
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_partner_dna_lexical",
+      "probe": "relation_axis",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 8,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_substrate_chain_position_subject",
+      "probe": "subject_role",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_substrate_decoy_subject",
+      "probe": "subject_role",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_position_subject_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.7695652173913043,
+      "v7a_n_fires": 460,
+      "v7a_status": "PASS",
+      "v7b_acc": 0.42105263157894735,
+      "v7b_n_fires": 38,
+      "v7b_ci_lo": 0.2785227481181953,
+      "v7b_ci_hi": 0.5780792938687267,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_subject": 38
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_position_object_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 42,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.2222222222222222,
+      "v7b_n_fires": 9,
+      "v7b_ci_lo": 0.06322376231222723,
+      "v7b_ci_hi": 0.5474166563271946,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_object": 9
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_role_swap_lexical_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 9,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_chain_position_lexical_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 6,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.3333333333333333,
+      "v7b_n_fires": 3,
+      "v7b_ci_lo": 0.0614903152761605,
+      "v7b_ci_hi": 0.7923450448735121,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {
+        "present_as_mediator": 3
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_decoy_lexical_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 20,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 6,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.3903430336530645,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_decoy": 6
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_no_grounded_match_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.18421052631578946,
+      "v7a_n_fires": 76,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.9230769230769231,
+      "v7b_n_fires": 13,
+      "v7b_ci_lo": 0.6668546607175265,
+      "v7b_ci_hi": 0.9862899336203037,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "absent": 13
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_absent_alias_check_subj",
+      "probe": "subject_role",
+      "v7a_acc": 0.18421052631578946,
+      "v7a_n_fires": 76,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.9230769230769231,
+      "v7b_n_fires": 13,
+      "v7b_ci_lo": 0.6668546607175265,
+      "v7b_ci_hi": 0.9862899336203037,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "absent": 13
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_substrate_chain_position_object",
+      "probe": "object_role",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_substrate_decoy_object",
+      "probe": "object_role",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_position_subject_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 42,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.25,
+      "v7b_n_fires": 8,
+      "v7b_ci_lo": 0.07147768885802763,
+      "v7b_ci_hi": 0.5907301208974108,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_subject": 8
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_position_object_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.7695652173913043,
+      "v7a_n_fires": 460,
+      "v7a_status": "PASS",
+      "v7b_acc": 0.52,
+      "v7b_n_fires": 50,
+      "v7b_ci_lo": 0.3851151225880844,
+      "v7b_ci_hi": 0.6520308760449429,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_object": 50
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_role_swap_lexical_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 9,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_chain_position_lexical_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 2,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 9,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.2991527535509594,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_mediator": 9
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_decoy_lexical_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 17,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.0,
+      "v7b_n_fires": 8,
+      "v7b_ci_lo": 0.0,
+      "v7b_ci_hi": 0.3244156195108769,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "present_as_decoy": 8
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_no_grounded_match_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.2571428571428571,
+      "v7a_n_fires": 70,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.8333333333333334,
+      "v7b_n_fires": 24,
+      "v7b_ci_lo": 0.6414652961213058,
+      "v7b_ci_hi": 0.9332143199927109,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "absent": 24
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_absent_alias_check_obj",
+      "probe": "object_role",
+      "v7a_acc": 0.2571428571428571,
+      "v7a_n_fires": 70,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.8333333333333334,
+      "v7b_n_fires": 24,
+      "v7b_ci_lo": 0.6414652961213058,
+      "v7b_ci_hi": 0.9332143199927109,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "absent": 24
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_substrate_hedge_marker",
+      "probe": "scope",
+      "v7a_acc": 0.2,
+      "v7a_n_fires": 15,
+      "v7a_status": "FAIL",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 2,
+      "v7b_ci_lo": 0.34237195288961925,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {
+        "hedged": 2
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_substrate_negation_explicit",
+      "probe": "scope",
+      "v7a_acc": 0.2857142857142857,
+      "v7a_n_fires": 7,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.3333333333333333,
+      "v7b_n_fires": 6,
+      "v7b_ci_lo": 0.09676933255921683,
+      "v7b_ci_hi": 0.7000116786584712,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "negated": 6
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_conditional_clause_substrate",
+      "probe": "scope",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 14,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.5,
+      "v7b_n_fires": 10,
+      "v7b_ci_lo": 0.23658959361548731,
+      "v7b_ci_hi": 0.7634104063845126,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "asserted_with_condition": 10
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_hedge_lexical",
+      "probe": "scope",
+      "v7a_acc": 0.13793103448275862,
+      "v7a_n_fires": 29,
+      "v7a_status": "FAIL",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 3,
+      "v7b_ci_lo": 0.43849391955098227,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {
+        "hedged": 3
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_negation_lexical",
+      "probe": "scope",
+      "v7a_acc": 0.23076923076923078,
+      "v7a_n_fires": 26,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.18181818181818182,
+      "v7b_n_fires": 11,
+      "v7b_ci_lo": 0.05136660067100063,
+      "v7b_ci_hi": 0.4769861375782448,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "negated": 11
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_conditional_lexical",
+      "probe": "scope",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 5,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.2,
+      "v7b_n_fires": 5,
+      "v7b_ci_lo": 0.03622316096978745,
+      "v7b_ci_hi": 0.6244717358814613,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "asserted_with_condition": 5
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_clean_assertion",
+      "probe": "scope",
+      "v7a_acc": 0.9661016949152542,
+      "v7a_n_fires": 59,
+      "v7a_status": "PASS",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 10,
+      "v7b_ci_lo": 0.7224598312333834,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "asserted": 10
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_low_information_evidence",
+      "probe": "scope",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 28,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.7857142857142857,
+      "v7b_n_fires": 14,
+      "v7b_ci_lo": 0.5241027622679172,
+      "v7b_ci_hi": 0.9242875166308363,
+      "v7b_status": "MARGINAL",
+      "v7b_vote_distribution": {
+        "abstain": 14
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_text_too_short",
+      "probe": "scope",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 3,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 11,
+      "v7b_ci_lo": 0.7411599827511859,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "abstain": 11
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_fragment_processed_form_subject",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 16,
+      "v7a_status": "FAIL",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 1,
+      "v7b_ci_lo": 0.20654329147389294,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {
+        "equivalent": 1
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_fragment_processed_form_object",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 16,
+      "v7a_status": "FAIL",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 1,
+      "v7b_ci_lo": 0.20654329147389294,
+      "v7b_ci_hi": 1.0,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {
+        "equivalent": 1
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_gilda_exact_symbol",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.8931506849315068,
+      "v7a_n_fires": 365,
+      "v7a_status": "PASS",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 21,
+      "v7b_ci_lo": 0.8453561767357979,
+      "v7b_ci_hi": 0.9999999999999999,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "mentioned": 21
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_evidence_contains_official_symbol",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.8931506849315068,
+      "v7a_n_fires": 365,
+      "v7a_status": "PASS",
+      "v7b_acc": 1.0,
+      "v7b_n_fires": 21,
+      "v7b_ci_lo": 0.8453561767357979,
+      "v7b_ci_hi": 0.9999999999999999,
+      "v7b_status": "PASS",
+      "v7b_vote_distribution": {
+        "mentioned": 21
+      },
+      "combined_status": "PASS"
+    },
+    {
+      "lf_name": "lf_gilda_alias",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 308,
+      "v7a_status": "FAIL",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_gilda_family_member",
+      "probe": "verify_grounding",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_gilda_no_match",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.1958041958041958,
+      "v7a_n_fires": 143,
+      "v7a_status": "FAIL",
+      "v7b_acc": 0.5,
+      "v7b_n_fires": 12,
+      "v7b_ci_lo": 0.2537781703934222,
+      "v7b_ci_hi": 0.7462218296065778,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "not_present": 12
+      },
+      "combined_status": "FAIL"
+    },
+    {
+      "lf_name": "lf_evidence_too_short_grounding",
+      "probe": "verify_grounding",
+      "v7a_acc": 0.0,
+      "v7a_n_fires": 8,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": 0.7142857142857143,
+      "v7b_n_fires": 7,
+      "v7b_ci_lo": 0.35892909014821267,
+      "v7b_ci_hi": 0.9177828342909844,
+      "v7b_status": "FAIL",
+      "v7b_vote_distribution": {
+        "uncertain": 7
+      },
+      "combined_status": "MARGINAL"
+    },
+    {
+      "lf_name": "lf_ambiguous_grounding",
+      "probe": "verify_grounding",
+      "v7a_acc": null,
+      "v7a_n_fires": 0,
+      "v7a_status": "MARGINAL (low fires)",
+      "v7b_acc": null,
+      "v7b_n_fires": 0,
+      "v7b_ci_lo": null,
+      "v7b_ci_hi": null,
+      "v7b_status": "MARGINAL (low fires)",
+      "v7b_vote_distribution": {},
+      "combined_status": "MARGINAL"
+    }
+  ]
+}

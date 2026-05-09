@@ -1,0 +1,15 @@
+{
+  "n_records": 153,
+  "wall_seconds": 79582.199192,
+  "wall_hours": 22.10616644222222,
+  "avg_seconds_per_record": 520.1450927581699,
+  "throughput_per_hour": 6.921145753601757,
+  "warning_kinds": {
+    "?": 3,
+    "parse_timeout": 85,
+    "grounding_timeout": 38,
+    "truncation": 18
+  },
+  "estimated_timeout_seconds": 11070,
+  "estimated_truncation_seconds": 9810
+}

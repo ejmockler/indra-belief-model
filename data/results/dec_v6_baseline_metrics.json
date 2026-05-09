@@ -1,0 +1,39 @@
+{
+  "n_total": 501,
+  "n_decided": 3,
+  "abstain": 3,
+  "acc": 0.7008032128514057,
+  "tpr": 0.6289752650176679,
+  "fpr": 0.20465116279069767,
+  "prec": 0.8018018018018018,
+  "tp": 178,
+  "tn": 171,
+  "fp": 44,
+  "fn": 105,
+  "verdict_dist": {
+    "correct": 222,
+    "incorrect": 276,
+    "abstain": 3
+  },
+  "tier_dist": {
+    "decomposed": 448,
+    "decomposed\u2192llm_comprehension": 50,
+    "decomposed\u2192llm_tool_use": 3
+  },
+  "reason_dist": {
+    "match": 188,
+    "hedging_hypothesis": 18,
+    "absent_relationship": 100,
+    "sign_mismatch": 12,
+    "grounding_gap": 45,
+    "axis_mismatch": 54,
+    "contradicted": 11,
+    "role_swap": 6,
+    "site_mismatch": 11,
+    "internal_contradiction": 3
+  },
+  "reference": {
+    "v15_mono_acc": 0.8394,
+    "v16_mono_acc": 0.8283
+  }
+}

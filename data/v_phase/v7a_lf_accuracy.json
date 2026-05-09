@@ -1,0 +1,765 @@
+{
+  "snorkel_sample": 10000,
+  "seed": 0,
+  "snorkel_weights": {},
+  "tags": {
+    "lf_substrate_catalog_match": "substrate-tuned",
+    "lf_substrate_negation_regex": "substrate-tuned",
+    "lf_chain_no_terminal": "substrate-tuned",
+    "lf_partner_substrate_gate": "substrate-tuned",
+    "lf_substrate_chain_position_subject": "substrate-tuned",
+    "lf_substrate_decoy_subject": "substrate-tuned",
+    "lf_substrate_chain_position_object": "substrate-tuned",
+    "lf_substrate_decoy_object": "substrate-tuned",
+    "lf_substrate_hedge_marker": "substrate-tuned",
+    "lf_substrate_negation_explicit": "substrate-tuned",
+    "lf_conditional_clause_substrate": "substrate-tuned",
+    "lf_fragment_processed_form_subject": "substrate-tuned",
+    "lf_fragment_processed_form_object": "substrate-tuned",
+    "lf_curated_db_axis": "clean",
+    "lf_reach_found_by_axis_match": "clean",
+    "lf_reach_found_by_axis_mismatch": "clean",
+    "lf_epistemics_direct_true": "clean",
+    "lf_epistemics_direct_false": "clean",
+    "lf_multi_extractor_axis_agreement": "clean",
+    "lf_amount_lexical": "clean",
+    "lf_amount_keyword_negative": "clean",
+    "lf_chain_with_named_intermediate": "clean",
+    "lf_no_entity_overlap": "clean",
+    "lf_partner_dna_lexical": "clean",
+    "lf_position_subject_subj": "clean",
+    "lf_position_object_subj": "clean",
+    "lf_role_swap_lexical_subj": "clean",
+    "lf_chain_position_lexical_subj": "clean",
+    "lf_decoy_lexical_subj": "clean",
+    "lf_no_grounded_match_subj": "clean",
+    "lf_absent_alias_check_subj": "clean",
+    "lf_position_subject_obj": "clean",
+    "lf_position_object_obj": "clean",
+    "lf_role_swap_lexical_obj": "clean",
+    "lf_chain_position_lexical_obj": "clean",
+    "lf_decoy_lexical_obj": "clean",
+    "lf_no_grounded_match_obj": "clean",
+    "lf_absent_alias_check_obj": "clean",
+    "lf_hedge_lexical": "clean",
+    "lf_negation_lexical": "clean",
+    "lf_conditional_lexical": "clean",
+    "lf_clean_assertion": "clean",
+    "lf_low_information_evidence": "clean",
+    "lf_text_too_short": "clean",
+    "lf_gilda_exact_symbol": "clean",
+    "lf_evidence_contains_official_symbol": "clean",
+    "lf_gilda_alias": "clean",
+    "lf_gilda_family_member": "clean",
+    "lf_gilda_no_match": "clean",
+    "lf_evidence_too_short_grounding": "clean",
+    "lf_ambiguous_grounding": "clean"
+  },
+  "probes": {
+    "relation_axis": {
+      "lf_names": [
+        "lf_substrate_catalog_match",
+        "lf_substrate_negation_regex",
+        "lf_chain_no_terminal",
+        "lf_partner_substrate_gate",
+        "lf_curated_db_axis",
+        "lf_reach_found_by_axis_match",
+        "lf_reach_found_by_axis_mismatch",
+        "lf_epistemics_direct_true",
+        "lf_epistemics_direct_false",
+        "lf_multi_extractor_axis_agreement",
+        "lf_amount_lexical",
+        "lf_amount_keyword_negative",
+        "lf_chain_with_named_intermediate",
+        "lf_no_entity_overlap",
+        "lf_partner_dna_lexical"
+      ],
+      "L_shape": [
+        482,
+        15
+      ],
+      "per_lf": {
+        "lf_substrate_catalog_match": {
+          "n_fires": 75,
+          "n_correct": 69,
+          "n_with_gold": 392,
+          "per_class_correct": {
+            "0": 69
+          },
+          "per_class_fires": {
+            "0": 75
+          },
+          "vote_distribution": {
+            "0": 83
+          }
+        },
+        "lf_substrate_negation_regex": {
+          "n_fires": 8,
+          "n_correct": 1,
+          "n_with_gold": 392,
+          "per_class_correct": {
+            "2": 1
+          },
+          "per_class_fires": {
+            "2": 8
+          },
+          "vote_distribution": {
+            "2": 13
+          }
+        },
+        "lf_chain_no_terminal": {
+          "n_fires": 53,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "6": 53
+          },
+          "vote_distribution": {
+            "6": 63
+          }
+        },
+        "lf_partner_substrate_gate": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_curated_db_axis": {
+          "n_fires": 3,
+          "n_correct": 3,
+          "n_with_gold": 392,
+          "per_class_correct": {
+            "0": 3
+          },
+          "per_class_fires": {
+            "0": 3
+          },
+          "vote_distribution": {
+            "0": 3
+          }
+        },
+        "lf_reach_found_by_axis_match": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_reach_found_by_axis_mismatch": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_epistemics_direct_true": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_epistemics_direct_false": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_multi_extractor_axis_agreement": {
+          "n_fires": 292,
+          "n_correct": 207,
+          "n_with_gold": 392,
+          "per_class_correct": {
+            "0": 207
+          },
+          "per_class_fires": {
+            "0": 292
+          },
+          "vote_distribution": {
+            "0": 347
+          }
+        },
+        "lf_amount_lexical": {
+          "n_fires": 18,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "1": 18
+          },
+          "vote_distribution": {
+            "1": 20
+          }
+        },
+        "lf_amount_keyword_negative": {
+          "n_fires": 2,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "3": 2
+          },
+          "vote_distribution": {
+            "3": 2
+          }
+        },
+        "lf_chain_with_named_intermediate": {
+          "n_fires": 1,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "5": 1
+          },
+          "vote_distribution": {
+            "5": 1
+          }
+        },
+        "lf_no_entity_overlap": {
+          "n_fires": 13,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "7": 13
+          },
+          "vote_distribution": {
+            "7": 16
+          }
+        },
+        "lf_partner_dna_lexical": {
+          "n_fires": 8,
+          "n_correct": 0,
+          "n_with_gold": 392,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "4": 8
+          },
+          "vote_distribution": {
+            "4": 12
+          }
+        }
+      }
+    },
+    "subject_role": {
+      "lf_names": [
+        "lf_substrate_chain_position_subject",
+        "lf_substrate_decoy_subject",
+        "lf_position_subject_subj",
+        "lf_position_object_subj",
+        "lf_role_swap_lexical_subj",
+        "lf_chain_position_lexical_subj",
+        "lf_decoy_lexical_subj",
+        "lf_no_grounded_match_subj",
+        "lf_absent_alias_check_subj"
+      ],
+      "L_shape": [
+        482,
+        9
+      ],
+      "per_lf": {
+        "lf_substrate_chain_position_subject": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_substrate_decoy_subject": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_position_subject_subj": {
+          "n_fires": 460,
+          "n_correct": 354,
+          "n_with_gold": 460,
+          "per_class_correct": {
+            "0": 354
+          },
+          "per_class_fires": {
+            "0": 460
+          },
+          "vote_distribution": {
+            "0": 482
+          }
+        },
+        "lf_position_object_subj": {
+          "n_fires": 42,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "1": 42
+          },
+          "vote_distribution": {
+            "1": 44
+          }
+        },
+        "lf_role_swap_lexical_subj": {
+          "n_fires": 9,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "1": 9
+          },
+          "vote_distribution": {
+            "1": 9
+          }
+        },
+        "lf_chain_position_lexical_subj": {
+          "n_fires": 6,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "2": 6
+          },
+          "vote_distribution": {
+            "2": 6
+          }
+        },
+        "lf_decoy_lexical_subj": {
+          "n_fires": 20,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "3": 20
+          },
+          "vote_distribution": {
+            "3": 21
+          }
+        },
+        "lf_no_grounded_match_subj": {
+          "n_fires": 76,
+          "n_correct": 14,
+          "n_with_gold": 460,
+          "per_class_correct": {
+            "4": 14
+          },
+          "per_class_fires": {
+            "4": 76
+          },
+          "vote_distribution": {
+            "4": 76
+          }
+        },
+        "lf_absent_alias_check_subj": {
+          "n_fires": 76,
+          "n_correct": 14,
+          "n_with_gold": 460,
+          "per_class_correct": {
+            "4": 14
+          },
+          "per_class_fires": {
+            "4": 76
+          },
+          "vote_distribution": {
+            "4": 76
+          }
+        }
+      }
+    },
+    "object_role": {
+      "lf_names": [
+        "lf_substrate_chain_position_object",
+        "lf_substrate_decoy_object",
+        "lf_position_subject_obj",
+        "lf_position_object_obj",
+        "lf_role_swap_lexical_obj",
+        "lf_chain_position_lexical_obj",
+        "lf_decoy_lexical_obj",
+        "lf_no_grounded_match_obj",
+        "lf_absent_alias_check_obj"
+      ],
+      "L_shape": [
+        482,
+        9
+      ],
+      "per_lf": {
+        "lf_substrate_chain_position_object": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_substrate_decoy_object": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_position_subject_obj": {
+          "n_fires": 42,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "0": 42
+          },
+          "vote_distribution": {
+            "0": 44
+          }
+        },
+        "lf_position_object_obj": {
+          "n_fires": 460,
+          "n_correct": 354,
+          "n_with_gold": 460,
+          "per_class_correct": {
+            "1": 354
+          },
+          "per_class_fires": {
+            "1": 460
+          },
+          "vote_distribution": {
+            "1": 482
+          }
+        },
+        "lf_role_swap_lexical_obj": {
+          "n_fires": 9,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "0": 9
+          },
+          "vote_distribution": {
+            "0": 9
+          }
+        },
+        "lf_chain_position_lexical_obj": {
+          "n_fires": 2,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "2": 2
+          },
+          "vote_distribution": {
+            "2": 2
+          }
+        },
+        "lf_decoy_lexical_obj": {
+          "n_fires": 17,
+          "n_correct": 0,
+          "n_with_gold": 460,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "3": 17
+          },
+          "vote_distribution": {
+            "3": 18
+          }
+        },
+        "lf_no_grounded_match_obj": {
+          "n_fires": 70,
+          "n_correct": 18,
+          "n_with_gold": 460,
+          "per_class_correct": {
+            "4": 18
+          },
+          "per_class_fires": {
+            "4": 70
+          },
+          "vote_distribution": {
+            "4": 70
+          }
+        },
+        "lf_absent_alias_check_obj": {
+          "n_fires": 70,
+          "n_correct": 18,
+          "n_with_gold": 460,
+          "per_class_correct": {
+            "4": 18
+          },
+          "per_class_fires": {
+            "4": 70
+          },
+          "vote_distribution": {
+            "4": 70
+          }
+        }
+      }
+    },
+    "scope": {
+      "lf_names": [
+        "lf_substrate_hedge_marker",
+        "lf_substrate_negation_explicit",
+        "lf_conditional_clause_substrate",
+        "lf_hedge_lexical",
+        "lf_negation_lexical",
+        "lf_conditional_lexical",
+        "lf_clean_assertion",
+        "lf_low_information_evidence",
+        "lf_text_too_short"
+      ],
+      "L_shape": [
+        482,
+        9
+      ],
+      "per_lf": {
+        "lf_substrate_hedge_marker": {
+          "n_fires": 15,
+          "n_correct": 3,
+          "n_with_gold": 288,
+          "per_class_correct": {
+            "1": 3
+          },
+          "per_class_fires": {
+            "1": 15
+          },
+          "vote_distribution": {
+            "1": 32
+          }
+        },
+        "lf_substrate_negation_explicit": {
+          "n_fires": 7,
+          "n_correct": 2,
+          "n_with_gold": 288,
+          "per_class_correct": {
+            "3": 2
+          },
+          "per_class_fires": {
+            "3": 7
+          },
+          "vote_distribution": {
+            "3": 12
+          }
+        },
+        "lf_conditional_clause_substrate": {
+          "n_fires": 14,
+          "n_correct": 0,
+          "n_with_gold": 288,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "2": 14
+          },
+          "vote_distribution": {
+            "2": 27
+          }
+        },
+        "lf_hedge_lexical": {
+          "n_fires": 29,
+          "n_correct": 4,
+          "n_with_gold": 288,
+          "per_class_correct": {
+            "1": 4
+          },
+          "per_class_fires": {
+            "1": 29
+          },
+          "vote_distribution": {
+            "1": 52
+          }
+        },
+        "lf_negation_lexical": {
+          "n_fires": 26,
+          "n_correct": 6,
+          "n_with_gold": 288,
+          "per_class_correct": {
+            "3": 6
+          },
+          "per_class_fires": {
+            "3": 26
+          },
+          "vote_distribution": {
+            "3": 40
+          }
+        },
+        "lf_conditional_lexical": {
+          "n_fires": 5,
+          "n_correct": 0,
+          "n_with_gold": 288,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "2": 5
+          },
+          "vote_distribution": {
+            "2": 10
+          }
+        },
+        "lf_clean_assertion": {
+          "n_fires": 59,
+          "n_correct": 57,
+          "n_with_gold": 288,
+          "per_class_correct": {
+            "0": 57
+          },
+          "per_class_fires": {
+            "0": 59
+          },
+          "vote_distribution": {
+            "0": 87
+          }
+        },
+        "lf_low_information_evidence": {
+          "n_fires": 28,
+          "n_correct": 0,
+          "n_with_gold": 288,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "4": 28
+          },
+          "vote_distribution": {
+            "4": 34
+          }
+        },
+        "lf_text_too_short": {
+          "n_fires": 3,
+          "n_correct": 0,
+          "n_with_gold": 288,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "4": 3
+          },
+          "vote_distribution": {
+            "4": 3
+          }
+        }
+      }
+    },
+    "verify_grounding": {
+      "lf_names": [
+        "lf_fragment_processed_form_subject",
+        "lf_fragment_processed_form_object",
+        "lf_gilda_exact_symbol",
+        "lf_evidence_contains_official_symbol",
+        "lf_gilda_alias",
+        "lf_gilda_family_member",
+        "lf_gilda_no_match",
+        "lf_evidence_too_short_grounding",
+        "lf_ambiguous_grounding"
+      ],
+      "L_shape": [
+        964,
+        9
+      ],
+      "per_lf": {
+        "lf_fragment_processed_form_subject": {
+          "n_fires": 16,
+          "n_correct": 0,
+          "n_with_gold": 816,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "1": 16
+          },
+          "vote_distribution": {
+            "1": 21
+          }
+        },
+        "lf_fragment_processed_form_object": {
+          "n_fires": 16,
+          "n_correct": 0,
+          "n_with_gold": 816,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "1": 16
+          },
+          "vote_distribution": {
+            "1": 21
+          }
+        },
+        "lf_gilda_exact_symbol": {
+          "n_fires": 365,
+          "n_correct": 326,
+          "n_with_gold": 816,
+          "per_class_correct": {
+            "0": 326
+          },
+          "per_class_fires": {
+            "0": 365
+          },
+          "vote_distribution": {
+            "0": 443
+          }
+        },
+        "lf_evidence_contains_official_symbol": {
+          "n_fires": 365,
+          "n_correct": 326,
+          "n_with_gold": 816,
+          "per_class_correct": {
+            "0": 326
+          },
+          "per_class_fires": {
+            "0": 365
+          },
+          "vote_distribution": {
+            "0": 443
+          }
+        },
+        "lf_gilda_alias": {
+          "n_fires": 308,
+          "n_correct": 0,
+          "n_with_gold": 816,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "1": 308
+          },
+          "vote_distribution": {
+            "1": 379
+          }
+        },
+        "lf_gilda_family_member": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 816,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        },
+        "lf_gilda_no_match": {
+          "n_fires": 143,
+          "n_correct": 28,
+          "n_with_gold": 816,
+          "per_class_correct": {
+            "2": 28
+          },
+          "per_class_fires": {
+            "2": 143
+          },
+          "vote_distribution": {
+            "2": 148
+          }
+        },
+        "lf_evidence_too_short_grounding": {
+          "n_fires": 8,
+          "n_correct": 0,
+          "n_with_gold": 816,
+          "per_class_correct": {},
+          "per_class_fires": {
+            "3": 8
+          },
+          "vote_distribution": {
+            "3": 8
+          }
+        },
+        "lf_ambiguous_grounding": {
+          "n_fires": 0,
+          "n_correct": 0,
+          "n_with_gold": 816,
+          "per_class_correct": {},
+          "per_class_fires": {},
+          "vote_distribution": {}
+        }
+      }
+    }
+  }
+}

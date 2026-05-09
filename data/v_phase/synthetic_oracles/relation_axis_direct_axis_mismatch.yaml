@@ -1,0 +1,22 @@
+# Synthetic-oracle templates for relation_axis = direct_axis_mismatch.
+# Claim axis ≠ evidence axis (no expression-axis terms either).
+
+probe: relation_axis
+class: direct_axis_mismatch
+templates:
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} {VERB} {ENT_B} at residue Ser63 in stimulated cells; activity was not assessed."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=modification, sign=positive"
+    evidence: "{ENT_A} translocates {ENT_B} from cytosol to nucleus following stimulation."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} translocates {ENT_B} into the nucleus after growth-factor treatment."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} {VERB} {ENT_B} on a single conserved residue; no binding interaction was observed."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} {VERB} {ENT_B} (modification axis only); functional activity of {ENT_B} is unchanged."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=modification, sign=positive"
+    evidence: "{ENT_A} forms a stable complex with {ENT_B} at the membrane; no post-translational modification was detected."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=binding, sign=neutral"
+    evidence: "{ENT_A} {VERB} {ENT_B} in vitro; co-immunoprecipitation showed no direct interaction."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} {VERB} {ENT_B} on lysine residues in a context-dependent manner."

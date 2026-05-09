@@ -1,0 +1,17 @@
+# Synthetic-oracle templates for scope = negated.
+
+probe: scope
+class: negated
+templates:
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} did not {VERB} {ENT_B} under any tested condition."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "No effect of {ENT_A} on {ENT_B} was observed in any of the cell lines profiled."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} failed to {VERB} {ENT_B} despite multiple attempts at varying concentrations."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "Contrary to expectation, {ENT_A} does not interact with {ENT_B} in our co-immunoprecipitation experiments."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_B} was not {VERB} by {ENT_A} in any biochemical or cell-based assay."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} did not affect {ENT_B} levels or activity, ruling out direct regulation."

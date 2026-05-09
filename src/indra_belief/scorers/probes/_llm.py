@@ -34,6 +34,8 @@ def llm_classify(
     client: "ModelClient",
     max_tokens: int = 200,
     temperature: float = 0.1,
+    failure_default: str | None = None,
+    reasoning_effort: str = "none",
 ) -> tuple[str, str, bool]:
     """Run a closed-set classification probe via LLM.
 
@@ -45,19 +47,28 @@ def llm_classify(
         The assistant answer string MUST be valid JSON.
       user_message: the actual question to answer.
       answer_set: closed set of valid answer values; out-of-set answers
-        abstain.
+        project to failure_default (or to "abstain" if available).
       kind: the probe kind (used for call_log telemetry tag).
       client: the model client.
       max_tokens, temperature: standard knobs.
+      failure_default: optional override for the failure-mode answer.
+        If provided, used in preference to "abstain" or alphabetical
+        fallback. T-phase Fix A: relation_axis passes "no_relation"
+        as failure_default after dropping "abstain" from its answer set.
+      reasoning_effort: U-phase U3 selective reasoning. Default "none"
+        for fast first-pass. Caller can pass "low"/"medium" to escalate
+        on hard cases. When escalated, max_tokens auto-extends to 16000
+        to leave room for both reasoning and content (gemma-remote
+        burns ~12000 reasoning tokens at "medium").
 
     Returns:
       (answer, rationale, succeeded).
       - succeeded=True when LLM returned a parseable answer in the
-        allowed set (even if that answer is "abstain" — legitimate
-        abstain for probes whose answer set includes it).
+        allowed set.
       - succeeded=False on any failure (transport, JSON, schema). In
-        that case answer is forced to "abstain" if "abstain" is in the
-        answer set; otherwise the caller must provide a fallback.
+        that case answer is failure_default (if provided), else
+        "abstain" (if in the answer set), else the alphabetically-first
+        member of the answer set.
     """
     messages: list[dict] = []
     for shot_q, shot_a in few_shots:
@@ -65,38 +76,76 @@ def llm_classify(
         messages.append({"role": "assistant", "content": shot_a})
     messages.append({"role": "user", "content": user_message})
 
+    # U3 escalation: when reasoning is non-none, extend max_tokens budget
+    # to fit ~12000 reasoning tokens + content. Per model_client doctrine,
+    # gemma-remote at reasoning="medium" burns 12000+ reasoning tokens
+    # before emitting JSON, causing truncation on default 200-token budget.
+    effective_max_tokens = max_tokens
+    if reasoning_effort != "none":
+        effective_max_tokens = max(max_tokens, 16000)
+
     try:
         response = client.call(
             system=system_prompt,
             messages=messages,
-            max_tokens=max_tokens,
+            max_tokens=effective_max_tokens,
             temperature=temperature,
             response_format={"type": "json_object"},
-            reasoning_effort="none",
+            reasoning_effort=reasoning_effort,
             kind=f"probe_{kind}",
         )
     except Exception as e:
         log.warning("probe(%s): client.call() failed: %s", kind, e)
-        return _failure_fallback(answer_set, f"transport_error:{type(e).__name__}")
+        return _failure_fallback(
+            answer_set, f"transport_error:{type(e).__name__}", failure_default,
+        )
 
     if getattr(response, "finish_reason", None) == "length":
-        log.warning("probe(%s): response truncated; abstaining", kind)
-        return _failure_fallback(answer_set, "response_truncated")
+        log.warning(
+            "probe(%s, reasoning=%s): response truncated; abstaining",
+            kind, reasoning_effort,
+        )
+        return _failure_fallback(
+            answer_set, "response_truncated", failure_default,
+        )
 
     content = (response.content or "").strip()
     if not content:
         # Some backends emit reasoning into raw_text but leave content empty.
         content = (response.raw_text or "").strip()
     if not content:
-        return _failure_fallback(answer_set, "empty_response")
+        return _failure_fallback(answer_set, "empty_response", failure_default)
 
     obj = _extract_json(content)
     if obj is None:
-        return _failure_fallback(answer_set, "json_parse_failure")
+        return _failure_fallback(
+            answer_set, "json_parse_failure", failure_default,
+        )
 
     answer = obj.get("answer")
     if not isinstance(answer, str) or answer not in answer_set:
-        return _failure_fallback(answer_set, f"invalid_answer:{answer!r}")
+        # T-phase Fix A: when failure_default is provided AND the LLM
+        # returned a parseable but out-of-set string answer, treat it as
+        # a successful classification with the answer projected. The LLM
+        # did respond meaningfully — we just had to map the response into
+        # the closed set. Source stays "llm".
+        # Other failure modes (transport, empty, JSON) still source="abstain".
+        if (
+            failure_default is not None
+            and failure_default in answer_set
+            and isinstance(answer, str)
+        ):
+            rationale = obj.get("rationale", "")
+            if not isinstance(rationale, str):
+                rationale = ""
+            log.info(
+                "probe(%s): out-of-set answer %r projected to %r",
+                kind, answer, failure_default,
+            )
+            return failure_default, rationale[:200], True
+        return _failure_fallback(
+            answer_set, f"invalid_answer:{answer!r}", failure_default,
+        )
 
     rationale = obj.get("rationale", "")
     if not isinstance(rationale, str):
@@ -105,11 +154,20 @@ def llm_classify(
 
 
 def _failure_fallback(
-    answer_set: frozenset[str], rationale: str,
+    answer_set: frozenset[str],
+    rationale: str,
+    failure_default: str | None = None,
 ) -> tuple[str, str, bool]:
-    """Return a failure-mode triple. Uses 'abstain' if it's in the
-    answer set; otherwise picks the first sorted member (caller-chosen
-    fallback for probes that don't support abstain natively)."""
+    """Return a failure-mode triple for transport/JSON/empty failures.
+
+    Out-of-set string answers go through the success path with projection
+    (see llm_classify). This function handles only true LLM failures.
+
+    Priority: explicit failure_default (must be in answer_set) >
+    "abstain" (if in answer_set) > alphabetical first member.
+    """
+    if failure_default is not None and failure_default in answer_set:
+        return failure_default, rationale, False
     if "abstain" in answer_set:
         return "abstain", rationale, False
     return sorted(answer_set)[0], rationale, False

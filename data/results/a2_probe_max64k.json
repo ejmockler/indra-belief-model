@@ -1,0 +1,57 @@
+[
+  {
+    "pattern": "real_disagreement",
+    "claim": "CTRL -> SELE",
+    "gold": "correct",
+    "dec_v6": "incorrect",
+    "unified": "supports",
+    "tokens": 2148,
+    "reason_chars": 7230,
+    "finish": "stop",
+    "secs": 24.3
+  },
+  {
+    "pattern": "nominalized",
+    "claim": "INS -> PI3K",
+    "gold": "correct",
+    "dec_v6": "incorrect",
+    "unified": "supports",
+    "tokens": 549,
+    "reason_chars": 1630,
+    "finish": "stop",
+    "secs": 6.3
+  },
+  {
+    "pattern": "indirect_chain",
+    "claim": "NOTCH1 -> NFkappaB",
+    "gold": "correct",
+    "dec_v6": "incorrect",
+    "unified": "supports",
+    "tokens": 607,
+    "reason_chars": 1650,
+    "finish": "stop",
+    "secs": 6.8
+  },
+  {
+    "pattern": "negation_context",
+    "claim": "p14_3_3 -> CDC25C",
+    "gold": "correct",
+    "dec_v6": "incorrect",
+    "unified": "supports",
+    "tokens": 772,
+    "reason_chars": 1956,
+    "finish": "stop",
+    "secs": 8.7
+  },
+  {
+    "pattern": "hedging_overfire",
+    "claim": "CDK3 -> JUN",
+    "gold": "correct",
+    "dec_v6": "incorrect",
+    "unified": "supports",
+    "tokens": 1366,
+    "reason_chars": 4910,
+    "finish": "stop",
+    "secs": 15.4
+  }
+]

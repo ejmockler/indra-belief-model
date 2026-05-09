@@ -1,0 +1,27 @@
+# Synthetic-oracle templates for relation_axis = direct_amount_match.
+# V5r §6/§10: hand-written templates × placeholder pool → 150-300 records.
+# Templates deterministically render with `_placeholders.yaml` lists.
+
+probe: relation_axis
+class: direct_amount_match
+templates:
+  - claim: "{ENT_A} (axis=amount, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_A} overexpression increased {ENT_B} mRNA and protein levels in transfected cells."
+  - claim: "{ENT_A} (axis=amount, sign=positive, objects=['{ENT_B}'])"
+    evidence: "Forced expression of {ENT_A} upregulated {ENT_B} expression in primary cell models."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=positive"
+    evidence: "Knockdown of {ENT_A} reduced {ENT_B} transcript abundance, while overexpression rescued it."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=positive"
+    evidence: "{ENT_A} drives transcriptional upregulation of {ENT_B} in stimulated cultures."
+  - claim: "{ENT_A} (axis=amount, sign=negative, objects=['{ENT_B}'])"
+    evidence: "{ENT_A} downregulated {ENT_B} protein levels by ~60% within 24h of treatment."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=negative"
+    evidence: "{ENT_A} suppresses {ENT_B} expression at the mRNA level under hypoxic conditions."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=positive"
+    evidence: "{ENT_A} induced a marked increase in {ENT_B} levels after stimulation, as quantified by Western blot."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=positive"
+    evidence: "Treatment with {ENT_A} restored {ENT_B} expression in deficient cells."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=positive"
+    evidence: "{ENT_A} silencing significantly decreased {ENT_B} mRNA abundance, consistent with positive regulation."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=amount, sign=negative"
+    evidence: "{ENT_A}-induced decrease in {ENT_B} protein abundance was confirmed at multiple time points."

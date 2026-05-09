@@ -1,0 +1,21 @@
+# Synthetic-oracle templates for relation_axis = via_mediator_partial.
+# Evidence carries chain markers (thereby, leads to, mediated by) but no
+# named intermediate.
+
+probe: relation_axis
+class: via_mediator_partial
+templates:
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} leads to {ENT_B} activation through several downstream signaling steps."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A}-mediated {ENT_B} {VERB} occurs via multiple intermediate factors that remain to be characterized."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} thereby modulates {ENT_B} activity through a yet-unidentified chain of effectors."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A}, acting through several pathway intermediates, ultimately {VERB} {ENT_B}."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "Activation of {ENT_B} downstream of {ENT_A} occurs via a multi-step relay whose components are not detailed here."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "{ENT_A} indirectly {VERB} {ENT_B} through downstream cascades that warrant further investigation."
+  - claim: "({ENT_A}, {ENT_B}) — claim axis=activity, sign=positive"
+    evidence: "The effect of {ENT_A} on {ENT_B} is mediated by upstream pathway components, although the precise relay was not delineated."

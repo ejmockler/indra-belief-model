@@ -1,0 +1,8 @@
+{
+  "threshold": 0.05,
+  "calibrated_threshold": 0.0,
+  "min_floor": 0.05,
+  "probe": "relation_axis",
+  "calibration_pairs": 10000,
+  "percentile": 95.0
+}

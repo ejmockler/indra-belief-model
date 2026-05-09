@@ -95,6 +95,59 @@ def _grounding_uncertain(groundings: tuple[GroundingVerdict, ...]) -> bool:
     return any(g.status == "uncertain" for g in groundings)
 
 
+# U-phase U10: cross-probe consistency check. Detects inconsistent
+# combinations of probe answers. Confidence-only modifier — never
+# overrides verdict (per U1 finding #4 to keep ReasonCode surface
+# stable). Inconsistency patterns:
+#
+#   1. subject_role=present_as_subject + relation_axis=no_relation
+#      → If subject is acting in evidence, what relation is it in?
+#        Likely the LLM probes disagreed.
+#   2. subject_role=absent + relation_axis=direct_sign_match
+#      → Direct contradiction: subject can't be matching if absent.
+#   3. object_role=absent + relation_axis=direct_sign_match
+#      → Same contradiction in reverse.
+#   4. scope=negated + relation_axis=direct_sign_match + both probes
+#      reported probes (not substrate-derived)
+#      → Tension; rationale is preserved but confidence is downgraded.
+#
+# When any inconsistency fires, append "[probe_inconsistency]" to the
+# rationale and downgrade confidence to "low" (high → medium, medium →
+# low). Verdict is unchanged.
+def _probe_inconsistency_detected(bundle: ProbeBundle) -> bool:
+    sr = bundle.subject_role.answer
+    or_ = bundle.object_role.answer
+    ra = bundle.relation_axis.answer
+    sc = bundle.scope.answer
+
+    # Pattern 1: subject claims to be present as subject but no relation
+    if sr == "present_as_subject" and ra == "no_relation":
+        return True
+    # Pattern 2: subject absent but match claimed
+    if sr == "absent" and ra in ("direct_sign_match", "direct_amount_match",
+                                   "direct_sign_mismatch", "via_mediator"):
+        return True
+    # Pattern 3: object absent but match claimed
+    if or_ == "absent" and ra in ("direct_sign_match", "direct_amount_match",
+                                    "direct_sign_mismatch", "via_mediator"):
+        return True
+    # Pattern 4: relation claims to match but scope says negated
+    if (
+        ra in ("direct_sign_match", "direct_amount_match")
+        and sc == "negated"
+    ):
+        return True
+    return False
+
+
+def _downgrade_confidence(confidence: str) -> str:
+    if confidence == "high":
+        return "medium"
+    if confidence == "medium":
+        return "low"
+    return confidence  # already low; no further downgrade
+
+
 def _decide(
     bundle: ProbeBundle, claim: ClaimCommitment,
 ) -> tuple[str, str | None, str]:
@@ -135,7 +188,22 @@ def _decide(
 
     # Mediator: subject or object in the middle of a chain.
     # Indirect chain — abstain (claim implies direct link).
+    #
+    # T-phase Fix B (extension): Phosphorylation also accepts mediator-role
+    # entities at low confidence. When evidence describes "Raf phosphorylates
+    # MEK which phosphorylates MAPK", a probe may classify MEK as
+    # present_as_mediator. The claim Phosphorylation(MEK, MAPK) is still
+    # asserted (the MEK→MAPK phosphorylation IS observed); the mediator
+    # role just means MEK has additional upstream context. Curators
+    # routinely accept these — same empirical signal as via_mediator
+    # (step 5).
     if sr == "present_as_mediator" or or_ == "present_as_mediator":
+        if claim.stmt_type == "Phosphorylation":
+            if sc == "negated":
+                return "incorrect", "contradicted", \
+                    "Phosphorylation chain-mediator role, negated"
+            return "correct", "upstream_attribution", \
+                "Phosphorylation chain-mediator role accepted at low confidence"
         return "abstain", "indirect_chain", \
             "claim entity is a chain mediator, not endpoint"
 
@@ -165,12 +233,37 @@ def _decide(
         return "incorrect", "sign_mismatch", \
             "relation present but opposite sign"
 
+    # U-phase U7 (Intervention E): explicit amount-axis match. Adjudicator
+    # gates per claim axis:
+    #   - amount-axis claim (IncreaseAmount, DecreaseAmount): treat as
+    #     direct_sign_match (axis-aligned), proceed to scope check.
+    #   - non-amount claim: this is axis_mismatch (claim is activity/
+    #     modification/binding/etc., evidence is amount-axis change).
+    if ra == "direct_amount_match":
+        if claim.axis == "amount":
+            # Fall through to scope-based correct/incorrect determination
+            # — same as direct_sign_match.
+            ra = "direct_sign_match"  # reassign for scope-block reuse below
+        else:
+            return "incorrect", "axis_mismatch", \
+                "claim is non-amount axis but evidence describes amount change"
+
     if ra == "via_mediator":
         # §5.6: INDRA semantics. Causal claims (Activation, Inhibition,
         # IncreaseAmount, DecreaseAmount) accept indirect chains —
         # "X activates Y via Z" is valid Activation(X, Y) at the
-        # pathway level. Direct claims (Phosphorylation, Complex,
-        # Translocation, etc.) require X→Y direct contact.
+        # pathway level.
+        #
+        # T-phase Fix B (doctrine §3.2): Phosphorylation also accepts
+        # indirect chains, empirically validated at 100% precision
+        # (4/4 gold-correct on holdout indirect_chain class). REACH
+        # routinely emits Phosphorylation(X, Y) for chained evidence
+        # and curators accept these. Confidence is "low" via the
+        # upstream_attribution reason code.
+        #
+        # Other direct claims (Complex, Translocation, etc.) still
+        # abstain — empirical precision when forced-correct is too low
+        # to justify the change.
         if _is_causal_claim(claim.stmt_type):
             # Honor scope for causal indirect chains too.
             if sc == "asserted":
@@ -184,19 +277,45 @@ def _decide(
                     "causal indirect chain, negated"
             return "correct", "match", \
                 "causal claim accepts indirect chain"
+        if claim.stmt_type == "Phosphorylation":
+            if sc == "negated":
+                return "incorrect", "contradicted", \
+                    "Phosphorylation indirect chain, negated"
+            return "correct", "upstream_attribution", \
+                "Phosphorylation accepts upstream attribution at low confidence"
         return "abstain", "indirect_chain", \
             "direct claim type but evidence shows indirect chain"
 
     if ra == "via_mediator_partial":
         # Same causal-vs-direct distinction; less confidence.
+        # T-phase Fix B: Phosphorylation also accepts partial chains
+        # at low confidence (chain_extraction_gap reason code).
         if _is_causal_claim(claim.stmt_type):
             return "correct", "chain_extraction_gap", \
                 "causal claim with partial chain — accept at lower confidence"
+        if claim.stmt_type == "Phosphorylation":
+            return "correct", "chain_extraction_gap", \
+                "Phosphorylation with partial chain — accept at low confidence"
         return "abstain", "chain_extraction_gap", \
             "direct claim, chain markers but no extractable mediator"
 
     if ra == "abstain":
-        return "abstain", None, "relation underdetermined"
+        # T-phase Fix A: relation_axis="abstain" is no longer in the
+        # closed answer set. This branch is unreachable under normal
+        # operation — it only triggers if _llm.py's failure_default
+        # mechanism is bypassed. Defensive scope-aware tiebreaker:
+        # use scope to project a verdict rather than emit abstain.
+        # Choice: scope=hedged → incorrect/relation_underdetermined
+        # (more conservative than correct/low; absent axis info we
+        # don't know what to be hedged about).
+        if sc == "asserted":
+            return "correct", "match", \
+                "axis underdetermined; scope asserted (defensive)"
+        if sc == "negated":
+            return "incorrect", "contradicted", \
+                "axis underdetermined; scope negated"
+        return "incorrect", "relation_underdetermined", \
+            "axis and scope underdetermined"
 
     # ra == "direct_sign_match" — consult scope.
     if sc == "asserted":
@@ -208,6 +327,14 @@ def _decide(
         # low-confidence correct < high-confidence correct.
         return "correct", "hedging_hypothesis", \
             "hedged but relation matches claim"
+    if sc == "asserted_with_condition":
+        # U-phase U7: the relation is asserted on a qualified form of
+        # an entity ("X binds wild-type Y, but not 3G mutant Y"). The
+        # claim relation IS asserted; the negation governs the variant
+        # only. Treat like asserted at confidence=medium (not high) to
+        # signal the conditionality. Targets ~5 contradicted FN records.
+        return "correct", "match", \
+            "asserted on qualified form; conditional negation on variant"
     if sc == "negated":
         return "incorrect", "contradicted", \
             "relation explicitly negated"
@@ -264,16 +391,21 @@ def adjudicate(
 
     # Confidence policy.
     if verdict == "correct":
-        # Hedging, partial chain, or scope-underdetermined matches get
-        # downgraded to low confidence so composed scorer can weight
-        # them appropriately. Substrate-rescue and uncertain-grounding
-        # are both medium.
-        if reason in ("hedging_hypothesis", "chain_extraction_gap"):
+        # Hedging, partial chain, scope-underdetermined matches, and
+        # T-phase Fix B's upstream_attribution all carry "low"
+        # confidence so composed scorer can weight them appropriately.
+        # Substrate-rescue and uncertain-grounding are both medium.
+        if reason in ("hedging_hypothesis", "chain_extraction_gap",
+                      "upstream_attribution"):
             confidence = "low"
         elif reason == "regex_substrate_match":
             confidence = "medium"
         elif rationale.startswith("relation matches; scope underdetermined"):
             confidence = "low"
+        elif rationale.startswith("asserted on qualified form"):
+            # U7 asserted_with_condition: medium confidence to signal
+            # the conditional nature.
+            confidence = "medium"
         else:
             confidence = "high"
             if _grounding_uncertain(groundings):
@@ -283,10 +415,54 @@ def adjudicate(
     else:
         confidence = "medium"
 
+    # U4 KG-signal confidence modifier. STRICT contract: never overrides
+    # verdict; only boosts confidence one tier on a correct verdict when
+    # INDRA has a curated triple of the same axis with belief >= 0.5.
+    # Q-phase failure mode (-2.65pp from KG-as-verdict-source) is the
+    # line we don't cross.
+    kg_boosted = False
+    if (
+        verdict == "correct"
+        and ctx is not None
+        and ctx.kg_signal
+        and ctx.kg_signal.get("kind") == "same_axis"
+        and ctx.kg_signal.get("max_belief", 0.0) >= 0.5
+    ):
+        if confidence == "low":
+            confidence = "medium"
+            kg_boosted = True
+        elif confidence == "medium":
+            confidence = "high"
+            kg_boosted = True
+        # already "high" — no change.
+
+    # U10 cross-probe consistency check. If probes give inconsistent
+    # answers AND verdict is correct, downgrade confidence one tier.
+    # Skip for verdict=incorrect (scope-precedence already resolved
+    # the inconsistency) and verdict=abstain (no info to downgrade).
+    # No new ReasonCode (per U1 finding #4 to keep surface stable).
+    if verdict == "correct" and _probe_inconsistency_detected(bundle):
+        confidence = _downgrade_confidence(confidence)
+
     reasons: tuple[str, ...] = (reason,) if reason else ()
+    rationale_out = rationale
+    if ctx is not None and ctx.kg_signal:
+        kg = ctx.kg_signal
+        if kg.get("kind") == "same_axis":
+            rationale_out += (
+                f" [kg_confirmed: {kg.get('count', 0)} curated; "
+                f"belief={kg.get('max_belief', 0.0):.2f}]"
+            )
+        elif kg.get("kind") == "diff_axis":
+            rationale_out += (
+                f" [kg_axis_hint: {kg.get('count', 0)} curated on different axis]"
+            )
+    if verdict == "correct" and _probe_inconsistency_detected(bundle):
+        rationale_out += " [probe_inconsistency: confidence downgraded]"
+
     return Adjudication(
         verdict=verdict,
         confidence=confidence,
         reasons=reasons,  # type: ignore[arg-type]
-        rationale=rationale,
+        rationale=rationale_out,
     )

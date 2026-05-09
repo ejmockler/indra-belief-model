@@ -1,0 +1,20 @@
+# Synthetic-oracle templates for subject_role = present_as_mediator.
+# Claim subject is named in a chain (X → SUBJECT → Y).
+
+probe: subject_role
+class: present_as_mediator
+templates:
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_X} {VERB} {ENT_A}, which then propagates the signal to {ENT_B}."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "Upstream {ENT_X} drives downstream activation via {ENT_A}, mediating the effect on {ENT_B}."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "Activation by {ENT_X} requires {ENT_A} as an intermediate before reaching {ENT_B}."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "The {ENT_X}-induced {ENT_A}-dependent cascade culminates in {ENT_B} {VERB}."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_X} acts through {ENT_A} to {VERB} {ENT_B} in stimulated cells."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "Loss of {ENT_A} prevented {ENT_X}-mediated {ENT_B} {VERB}, identifying {ENT_A} as a relay node."
+  - claim: "{ENT_A} (axis=activity, sign=positive, objects=['{ENT_B}'])"
+    evidence: "{ENT_X} signals via {ENT_A} which subsequently {VERB} {ENT_B}, completing the chain."

@@ -1,0 +1,19 @@
+# Synthetic-oracle templates for scope = asserted_with_condition.
+
+probe: scope
+class: asserted_with_condition
+templates:
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} binds wild-type {ENT_B}, but does not bind the catalytically-dead {ENT_B} mutant."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "Conditional induction of wild-type {ENT_A}, but not the truncated mutants, restored {ENT_B} pathway activity."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} {VERB} {ENT_B} in the presence of {ENT_X}, while in its absence the relation is abolished."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} {VERB} {ENT_B} only under hypoxic conditions, not under normoxia."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} engages {ENT_B} when {ENT_X} is co-expressed, but not in cells lacking {ENT_X}."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} {VERB} the full-length {ENT_B}, but the truncated form is not engaged."
+  - claim: "relation between {ENT_A} and {ENT_B}"
+    evidence: "{ENT_A} {VERB} {ENT_B} in stimulated wild-type cells, but not in the {ENT_X}-knockout background."
