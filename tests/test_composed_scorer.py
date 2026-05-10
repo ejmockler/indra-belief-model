@@ -3,7 +3,6 @@ import pytest
 from indra_belief.composed_scorer import (
     ComposedBeliefScorer,
     EvidenceRecord,
-    ComposedScore,
 )
 from indra_belief.noise_model import INDRA_PRIORS, RECALIBRATED_PRIORS
 

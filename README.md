@@ -218,6 +218,48 @@ failures — are removed. Priors live in `noise_model.py` (`INDRA_PRIORS`,
 `RECALIBRATED_PRIORS`). See `scripts/benchmark_composition.py` for the
 benchmark used to pick them.
 
+### Score a whole corpus + browse the results
+
+For corpora larger than a single Statement (e.g. an INDRA-native JSON dump
+from rasmachine), `indra_belief.corpus` persists ingest, scoring, and
+validity to a DuckDB file; the `viewer/` SvelteKit app browses it.
+
+```python
+import duckdb
+from indra.statements import stmts_from_json_file
+from indra_belief import ModelClient
+from indra_belief.corpus import (
+    apply_schema, ingest_statements,
+    score_corpus, export_beliefs, model_card,
+)
+
+con = duckdb.connect("data/corpus.duckdb")
+apply_schema(con)
+stmts = stmts_from_json_file("data/corpora/latest_statements_rasmachine.json")
+ingest_statements(con, stmts, source_dump_id="rasmachine_emmaa")
+
+client = ModelClient("claude-sonnet-4-6")
+run_id = score_corpus(con, stmts, client=client,
+                      scorer_version="prod-v1", decompose=True,
+                      cost_threshold_usd=350)  # raises before spend
+
+export_beliefs(con, run_id, f"data/exports/{run_id}_indra.json")
+model_card(con, run_id, out_path=f"data/exports/{run_id}_card.json")
+con.close()
+```
+
+Estimate cost first: `from indra_belief.corpus import estimate_cost`
+returns LLM-call counts and projected USD per model. Truth-set support
+(gold pools, INDRA epistemics, source-DB curation) is foundational —
+`register_truth_set` + `load_truth_labels` light up the dashboard's
+P/R/F1-vs-gold panel automatically.
+
+Browse via the viewer (must be stopped while writing — DuckDB locks):
+
+```bash
+cd viewer && npm install && npm run dev  # http://127.0.0.1:5173
+```
+
 ### Benchmark evaluation against a holdout file
 
 ```bash
@@ -248,6 +290,13 @@ src/indra_belief/
   scorers/
     scorer.py              # The scorer — native INDRA, adaptive bank, voting
     _prompts.py            # System prompt, contrastive examples, verdict parser
+  corpus/                  # Corpus persistence + scoring orchestration (DuckDB)
+    schema.py              # 10-table schema (statement / evidence / agent / truth_set / metric / …)
+    loader.py              # from_indra_json + ingest_statements + register_truth_set
+    scoring.py             # score_corpus(con, stmts, *, decompose, with_validity, cost_threshold_usd)
+    validity.py            # compute_validity → calibration + 4a P/R/F1 + stratified MAE
+    export.py              # aggregate_beliefs + export_beliefs + model_card
+    cost.py                # estimate_cost + MODEL_PRICES_PER_M_TOKENS
   data/
     entity.py              # GroundedEntity: single gilda resolution per entity
     scoring_record.py      # ScoringRecord: wraps INDRA Statement + Evidence
@@ -255,6 +304,13 @@ src/indra_belief/
     example_bank.json      # Type-specific contrastive pairs
   tools/
     gilda_tools.py         # Entity lookup helper (pre-computed, injected into prompt)
+
+viewer/                    # SvelteKit dashboard over the corpus DuckDB
+  src/routes/
+    +page.svelte           # Corpus overview + validity panel + cost projection
+    statements/+page.svelte                # Matrix (paginated, URL-stated)
+    statements/[stmt_hash]/+page.svelte    # Per-stmt deep-dive (9-step rail, evidence cards, truth panel)
+    export/[run_id]/[kind]/+server.ts      # Belief + model-card download endpoints
 
 data/
   benchmark/

@@ -12,6 +12,7 @@ requires-python = ">=3.10"
 dependencies = [
     "gilda>=1.1.0",
     "indra>=1.22.0",
+    "duckdb>=1.0.0",
 ]
 
 [project.optional-dependencies]

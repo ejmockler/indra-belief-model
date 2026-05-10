@@ -22,6 +22,14 @@ data/results/*.log
 scripts/realistic_gate_results.json
 scripts/composition_benchmark.json
 
+# Corpus interface artifacts (reproducible from ingest + score_corpus)
+data/corpus.duckdb
+data/exports/
+
+# Brutalist / playwright pass artifacts
+*.png
+.playwright-mcp/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from indra_belief.scorers.probes.orchestrator import score_via_probes
-from indra.statements import Activation, Agent, Complex, Evidence
+from indra.statements import Activation, Agent, Evidence
 
 
 @dataclass
