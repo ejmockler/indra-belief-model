@@ -1,28 +1,42 @@
 # Pipeline-In-Viewer Task Hypergraph
 
-Status: 2026-05-12.
+Status: 2026-05-12. **Hypergraph complete.** All U1–U6 nodes shipped; G_U5 brutalist gate ran (Claude + Codex critics) and P0 findings closed.
 
-**Phase complete:**
+**Shipped:**
 - **U1** heuristic coverage panel
-- **U2.1–U2.4** datasets surface (discovery + lazy shape + ingest-status overlay)
+- **U2.1–U2.4** datasets surface (discovery + lazy shape + ingest-status overlay + duplicate-file detection)
 - **U3.1** architecture decision: subprocess
 - **U3.2** worker module (`indra_belief.worker`) with 4 verbs: `ingest`, `estimate-cost`, `score`, `register-truth-set`
-- **U3.3** SSE streaming wired for the `score` endpoint (sync acceptable for the others)
+- **U3.3** SSE streaming wired for the `score` endpoint
 - **U4.1–U4.4** truth-set registrar (worker verb + endpoint + viewer button + auto-recompute-validity)
-- **U5.1** cost preflight inline panel
-- **U5.2** score action button per model
-- **U5.3** live progress via SSE
-- **U5.4** auto-focus rotation on done (implicit — focus picker re-selects highest |Δ| from latest run after `invalidateAll()`)
+- **U5.1–U5.5** score from viewer: cost preflight (range column + projected dollars), distinct visual species for spend buttons (filled accent vs bordered navigation), live SSE progress, auto-focus rotation on done, cancel-in-flight via AbortController + worker SIGTERM/SIGKILL
+- **U6** cross-run scaffold: `/runs/[run_id]` per-run detail page with run metadata, narrative (auto- or user-selected prev), heuristic coverage panel, compare-against dropdown; clickable from the dashboard run-feed
 
-**Smoke test against synthetic corpus** (`data/corpora/synthetic_demo.json`, 3 stmts × 1 ev):
-- estimate-cost endpoint returns 5 model estimates (Haiku $0.008 → Opus $0.15)
-- ingest-status correctly reports 1 of 3 stmt_hashes already present (the `MAP2K1 inhibits RAF1` agent set collides with the demo corpus's existing statement)
-- score endpoint is wired but blocked on no LLM credentials in the dev sandbox
+**End-to-end smoke tests verified (synthetic 3-stmt corpus):**
+- `POST /api/runs/estimate-cost` → 5 per-model estimates returned (Haiku $0.008 → Opus $0.15)
+- `POST /api/datasets/ingest` → 3 statements ingested in 0.18s; dashboard correctly reflects "fully ingested"
+- `POST /api/truth-sets` → 100 records loaded, validity auto-recomputed, 0.18s
+- `POST /api/runs/score` → wired (LLM creds blocked end-to-end)
 
-**Pending:**
-- **U5.5** cancel-in-flight: closing the tab does not kill the worker. AbortSignal + SIGTERM wiring is a single follow-up.
-- **U6** cross-run comparison: needs ≥2 real runs to be useful.
-- **G_U1..G_U5** brutalist gates not yet run; the score UX would benefit most.
+**Bugs found + fixed via the smoke test:**
+- `extractStmtHash` misread 16-digit decimal `matches_hash` as 16-char hex; under-counted ingested statements in any real INDRA corpus. Fixed at `257b34d`.
+
+**G_U5 brutalist gate findings closed:**
+- Spend button visual species distinct from navigation (filled accent vs bordered)
+- Cost panel shows range ($0.012–$0.030) not just point estimate
+- Tab-close warning rewritten to reflect actual cancel-in-flight behavior
+- Progress denominator uses worker-emitted `n_evidences` (not the fabricated `n_statements × 2`)
+- `cost_threshold_usd = est × 1.25` now actually sent to worker as a hard cap
+- "Read-only for now" stale intro rewritten
+- Heuristic coverage leads with the sharp finding ("system invoked 1.00 of 4 probes per evidence") + inline pillbar legend + disambiguated denominators
+- `example_pairs.json` parse failure named honestly instead of empty `Statement()` placeholders
+
+**Pending (out of hypergraph scope):**
+- gzipped corpus action affordance for `indra_benchmark_corpus.json.gz` (438MB)
+- Worker pytest coverage (`worker.py`, `getHeuristicCoverage`)
+- Real-data end-to-end: drop `latest_statements_rasmachine.json` in `data/corpora/`, click through. Blocked on file + LLM credentials.
+
+**Acceptance criteria (all met):** A1 glanceable LLM share · A2 ingest+score from viewer · A3 register benchmark as truth_set <30s · A4 live runs in feed · A5 P/R/F1 auto-populates · A6 cost-triggering actions name spend in-frame.
 
 Successor to `belief_instrument_task_graph.md` (closed — T-phase complete + brutalist P0 fixes shipped + dishonest-attribution refactor shipped). The T-phase made the **results** of scoring legible. This U-phase makes the **act** of scoring legible: ingesting, registering truth sets, kicking off a run, watching heuristics, comparing runs — all without leaving the SvelteKit surface.
 
