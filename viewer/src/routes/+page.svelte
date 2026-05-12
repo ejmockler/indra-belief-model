@@ -89,11 +89,28 @@
 		| { phase: 'scored'; run_id: string; model: string; n_evidences: number; duration_s: number }
 		| { phase: 'error'; message: string };
 	let preflightStates: Record<string, PreflightState> = $state({});
+	// AbortControllers for in-flight score runs, indexed by dataset path.
+	// Kept outside $state because AbortController isn't a plain JSON value.
+	const scoreControllers = new Map<string, AbortController>();
 	function setPre(path: string, st: PreflightState) {
 		preflightStates = { ...preflightStates, [path]: st };
 	}
 	function preState(path: string): PreflightState {
 		return preflightStates[path] ?? { phase: 'idle' };
+	}
+	function cancelScore(path: string) {
+		const ctrl = scoreControllers.get(path);
+		if (ctrl) {
+			ctrl.abort();
+			scoreControllers.delete(path);
+		}
+		const cur = preState(path);
+		if (cur.phase === 'scoring') {
+			setPre(path, {
+				phase: 'error',
+				message: `canceled by user after ${cur.n_evidences_done} evidences (~${Math.round((Date.now() - cur.t_started) / 1000)}s)`
+			});
+		}
 	}
 
 	function fmtCost(c: number): string {
@@ -134,6 +151,8 @@
 			latest_stmt: null,
 			t_started: Date.now()
 		});
+		const ctrl = new AbortController();
+		scoreControllers.set(d.path, ctrl);
 		try {
 			const res = await fetch('/api/runs/score', {
 				method: 'POST',
@@ -143,7 +162,8 @@
 					source_dump_id,
 					model,
 					scorer_version
-				})
+				}),
+				signal: ctrl.signal
 			});
 			if (!res.ok || !res.body) {
 				const body = await res.text();
@@ -203,7 +223,15 @@
 				}
 			}
 		} catch (err) {
-			setPre(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+			// AbortError is the user-canceled path; cancelScore() set state
+			const cur = preState(d.path);
+			if ((err as Error).name === 'AbortError' && cur.phase === 'error') {
+				// already handled in cancelScore()
+			} else {
+				setPre(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+			}
+		} finally {
+			scoreControllers.delete(d.path);
 		}
 	}
 
@@ -615,7 +643,8 @@ con.close()`;
 														· elapsed {Math.round((Date.now() - pre.t_started) / 1000)}s
 														{#if pre.latest_stmt}<span class="muted">· latest stmt {pre.latest_stmt.slice(0, 8)}</span>{/if}
 													</p>
-													<p class="ds-cost-warn muted">stream connected; worker is running. closing this tab will not stop it.</p>
+													<p class="ds-cost-warn muted">stream connected; partial state is persisted per evidence — cancel below to stop the worker (sends SIGTERM, then SIGKILL after 2s).</p>
+													<button class="ds-action ds-action-cancel" onclick={() => cancelScore(d.path)}>cancel run →</button>
 												</div>
 											{:else if pre.phase === 'scored'}
 												<span class="ds-action ds-action-done">✓ scored as run {pre.run_id.slice(0, 8)} · {pre.n_evidences} evidences · {pre.duration_s.toFixed(1)}s</span>

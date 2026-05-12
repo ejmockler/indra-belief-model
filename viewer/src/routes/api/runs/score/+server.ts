@@ -45,7 +45,8 @@ function repoRoot(): string {
 	return resolve(dbPath(), '..', '..');
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async (event) => {
+	const request = event.request;
 	const body = (await request.json()) as Record<string, unknown>;
 	const path = body.path as string | undefined;
 	const source_dump_id = body.source_dump_id as string | undefined;
@@ -92,6 +93,26 @@ export const POST: RequestHandler = async ({ request }) => {
 				env: { ...process.env, PYTHONPATH: resolve(repoRoot(), 'src') }
 			});
 
+			// U5.5: if the client disconnects (closed tab, browser-side
+			// AbortController.abort()), kill the worker so we don't keep
+			// spending API budget on a run nobody is watching. SIGTERM first
+			// for graceful shutdown, then SIGKILL after a short grace window.
+			const onAbort = () => {
+				try {
+					if (!child.killed) {
+						child.kill('SIGTERM');
+						setTimeout(() => {
+							if (!child.killed) child.kill('SIGKILL');
+						}, 2000);
+					}
+				} catch {
+					// already dead — fine
+				}
+				writeEvent({ event: 'canceled', reason: 'client_disconnected' });
+				try { controller.close(); } catch { /* already closed */ }
+			};
+			event.request.signal.addEventListener('abort', onAbort);
+
 			let stdoutBuf = '';
 			let stderrBuf = '';
 
@@ -112,16 +133,18 @@ export const POST: RequestHandler = async ({ request }) => {
 			child.stderr.on('data', (chunk: Buffer) => {
 				stderrBuf += chunk.toString('utf-8');
 			});
-			child.on('exit', (code) => {
-				if (code !== 0) {
+			child.on('exit', (code, signal) => {
+				event.request.signal.removeEventListener('abort', onAbort);
+				if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGKILL') {
 					writeEvent({
 						event: 'error',
 						exit_code: code,
+						signal,
 						stderr: stderrBuf.slice(0, 4096)
 					});
 				}
-				writeEvent({ event: 'channel_closed', exit_code: code ?? -1 });
-				controller.close();
+				writeEvent({ event: 'channel_closed', exit_code: code ?? -1, signal });
+				try { controller.close(); } catch { /* already closed */ }
 			});
 			child.on('error', (err) => {
 				writeEvent({ event: 'spawn_error', error: err.message });

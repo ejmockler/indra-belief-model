@@ -1,6 +1,28 @@
 # Pipeline-In-Viewer Task Hypergraph
 
-Status: 2026-05-11. **U1 ✓ shipped** (heuristic coverage panel: per-probe substrate/llm/abstain/notrun rates + run-level summary). **U2.1–U2.3 ✓ shipped** (filesystem discovery + lazy shape preview + dashboard datasets section). **U2.4 pending** (ingest-status overlay). **U3.1 next** (architecture decision: subprocess vs sidecar).
+Status: 2026-05-12.
+
+**Phase complete:**
+- **U1** heuristic coverage panel
+- **U2.1–U2.4** datasets surface (discovery + lazy shape + ingest-status overlay)
+- **U3.1** architecture decision: subprocess
+- **U3.2** worker module (`indra_belief.worker`) with 4 verbs: `ingest`, `estimate-cost`, `score`, `register-truth-set`
+- **U3.3** SSE streaming wired for the `score` endpoint (sync acceptable for the others)
+- **U4.1–U4.4** truth-set registrar (worker verb + endpoint + viewer button + auto-recompute-validity)
+- **U5.1** cost preflight inline panel
+- **U5.2** score action button per model
+- **U5.3** live progress via SSE
+- **U5.4** auto-focus rotation on done (implicit — focus picker re-selects highest |Δ| from latest run after `invalidateAll()`)
+
+**Smoke test against synthetic corpus** (`data/corpora/synthetic_demo.json`, 3 stmts × 1 ev):
+- estimate-cost endpoint returns 5 model estimates (Haiku $0.008 → Opus $0.15)
+- ingest-status correctly reports 1 of 3 stmt_hashes already present (the `MAP2K1 inhibits RAF1` agent set collides with the demo corpus's existing statement)
+- score endpoint is wired but blocked on no LLM credentials in the dev sandbox
+
+**Pending:**
+- **U5.5** cancel-in-flight: closing the tab does not kill the worker. AbortSignal + SIGTERM wiring is a single follow-up.
+- **U6** cross-run comparison: needs ≥2 real runs to be useful.
+- **G_U1..G_U5** brutalist gates not yet run; the score UX would benefit most.
 
 Successor to `belief_instrument_task_graph.md` (closed — T-phase complete + brutalist P0 fixes shipped + dishonest-attribution refactor shipped). The T-phase made the **results** of scoring legible. This U-phase makes the **act** of scoring legible: ingesting, registering truth sets, kicking off a run, watching heuristics, comparing runs — all without leaving the SvelteKit surface.
 

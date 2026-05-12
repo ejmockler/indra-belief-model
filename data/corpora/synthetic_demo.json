@@ -1,0 +1,93 @@
+[
+  {
+    "type": "Phosphorylation",
+    "enz": {
+      "name": "MAP2K1",
+      "db_refs": {
+        "HGNC": "6840"
+      }
+    },
+    "sub": {
+      "name": "MAPK1",
+      "db_refs": {
+        "HGNC": "6871"
+      }
+    },
+    "residue": "T",
+    "position": "185",
+    "belief": 0.9,
+    "evidence": [
+      {
+        "source_api": "reach",
+        "pmid": "12345",
+        "text": "MAP2K1 phosphorylates MAPK1 on T185.",
+        "text_refs": {
+          "PMID": "12345"
+        },
+        "source_hash": -7741665252118712766
+      }
+    ],
+    "id": "d3d684d1-9c4b-476c-b003-c19b4f7d82b9",
+    "matches_hash": "19484473613266372"
+  },
+  {
+    "type": "Activation",
+    "subj": {
+      "name": "RAF1",
+      "db_refs": {
+        "HGNC": "9829"
+      }
+    },
+    "obj": {
+      "name": "MAP2K1",
+      "db_refs": {
+        "HGNC": "6840"
+      }
+    },
+    "obj_activity": "activity",
+    "belief": 0.9,
+    "evidence": [
+      {
+        "source_api": "reach",
+        "pmid": "12346",
+        "text": "RAF1 activates MAP2K1 via phosphorylation.",
+        "text_refs": {
+          "PMID": "12346"
+        },
+        "source_hash": 1392408427751929896
+      }
+    ],
+    "id": "f9539a44-8b5b-490b-9835-30d7275961ff",
+    "matches_hash": "1846153178643196"
+  },
+  {
+    "type": "Inhibition",
+    "subj": {
+      "name": "MAP2K1",
+      "db_refs": {
+        "HGNC": "6840"
+      }
+    },
+    "obj": {
+      "name": "RAF1",
+      "db_refs": {
+        "HGNC": "9829"
+      }
+    },
+    "obj_activity": "activity",
+    "belief": 0.9,
+    "evidence": [
+      {
+        "source_api": "reach",
+        "pmid": "12347",
+        "text": "MEK1 was not found to inhibit RAF1.",
+        "text_refs": {
+          "PMID": "12347"
+        },
+        "source_hash": -2108239651359476504
+      }
+    ],
+    "id": "767a9d04-8a47-4a8a-8fe3-655740cd88bf",
+    "matches_hash": "19130366465400303"
+  }
+]
