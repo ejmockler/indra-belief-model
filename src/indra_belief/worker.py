@@ -4,9 +4,10 @@ The SvelteKit viewer invokes this module via
     python -m indra_belief.worker <verb> [--args...]
 
 Subcommands:
-    ingest                 — load an INDRA-Statement JSON into corpus.duckdb
+    ingest                 — load an INDRA-Statement JSON (or .json.gz) into corpus.duckdb
     register-truth-set     — load a JSONL of tagged records as a truth_set
-    score                  — (deferred to U5) run score_corpus end-to-end
+    estimate-cost          — per-model cost estimate for a corpus
+    score                  — run score_corpus end-to-end with SSE-style progress
 
 Output convention: each non-fatal status event is a single JSON object
 written to stdout followed by a newline + flush, so the viewer endpoint
@@ -29,9 +30,25 @@ def emit(event: dict) -> None:
     sys.stdout.flush()
 
 
+def _load_stmts_from_any(path: str):
+    """Load INDRA Statements from `.json` or `.json.gz` transparently.
+
+    For .gz files we stream-decompress + json.load into memory. The 438MB
+    benchmark corpus expands to ~3GB; this is acceptable for an explicit
+    user action but would not scale to a server hot path.
+    """
+    from indra.statements import stmts_from_json, stmts_from_json_file
+
+    if path.endswith(".gz"):
+        import gzip
+
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            return stmts_from_json(json.load(fh))
+    return stmts_from_json_file(path)
+
+
 def do_ingest(args: argparse.Namespace) -> int:
     import duckdb
-    from indra.statements import stmts_from_json_file
 
     from indra_belief.corpus import apply_schema, ingest_statements
 
@@ -40,7 +57,7 @@ def do_ingest(args: argparse.Namespace) -> int:
     con = duckdb.connect(args.db)
     try:
         apply_schema(con)
-        stmts = stmts_from_json_file(args.path)
+        stmts = _load_stmts_from_any(args.path)
         emit({"event": "loaded", "n_statements": len(stmts)})
         ingest_statements(con, stmts, source_dump_id=args.source_dump_id)
         emit({
@@ -55,13 +72,11 @@ def do_ingest(args: argparse.Namespace) -> int:
 
 def do_estimate_cost(args: argparse.Namespace) -> int:
     """Read a JSON of INDRA Statements, estimate cost per supported model."""
-    from indra.statements import stmts_from_json_file
-
     from indra_belief.corpus.cost import MODEL_PRICES_PER_M_TOKENS, estimate_cost
 
     emit({"event": "started", "verb": "estimate-cost", "path": args.path})
     t0 = time.time()
-    stmts = stmts_from_json_file(args.path)
+    stmts = _load_stmts_from_any(args.path)
     estimates: list[dict] = []
     for model_id in MODEL_PRICES_PER_M_TOKENS.keys():
         e = estimate_cost(stmts, model_id=model_id)
@@ -84,7 +99,6 @@ def do_estimate_cost(args: argparse.Namespace) -> int:
 def do_score(args: argparse.Namespace) -> int:
     """Ingest (idempotent) + score a corpus end-to-end. Emits per-evidence progress."""
     import duckdb
-    from indra.statements import stmts_from_json_file
 
     from indra_belief.corpus import (
         apply_schema,
@@ -104,7 +118,7 @@ def do_score(args: argparse.Namespace) -> int:
     con = duckdb.connect(args.db)
     try:
         apply_schema(con)
-        stmts = stmts_from_json_file(args.path)
+        stmts = _load_stmts_from_any(args.path)
         # Count evidences so the viewer's progress bar has a real denominator
         # rather than a fabricated multiplier.
         n_evidences = sum(

@@ -567,13 +567,14 @@ con.close()`;
 								{@const st = actionState(d.path)}
 								{@const pre = preState(d.path)}
 								{@const canIngest = d.shape.kind_detail === 'indra_json' && (d.ingest?.n_in_file ?? 0) > 0 && (d.ingest?.n_already_ingested ?? 0) < (d.ingest?.n_in_file ?? 0)}
+								{@const canIngestGz = d.shape.kind_detail === 'json_gz'}
 								<li class="ds-row">
 									<div class="ds-row-head">
 										<code class="ds-name">{d.filename}</code>
 										<span class="ds-meta">
 											<span>{fmtBytes(d.size_bytes)}</span>
 											<span class="muted">·</span>
-											<span>{d.shape.n_records ?? '—'} {d.shape.kind_detail === 'jsonl_records' ? 'records' : d.shape.kind_detail === 'indra_json' ? 'statements' : ''}</span>
+											<span>{d.shape.n_records ?? '—'} {d.shape.kind_detail === 'jsonl_records' ? 'records' : d.shape.kind_detail === 'indra_json' ? 'statements' : d.shape.kind_detail === 'json_gz' ? 'compressed' : ''}</span>
 											{#if d.shape.source_apis.length > 0}
 												<span class="muted">·</span>
 												<span>sources: {d.shape.source_apis.join(', ')}</span>
@@ -596,6 +597,8 @@ con.close()`;
 										{/if}
 										{#if canIngest && st.phase === 'idle'}
 											<button class="ds-action" onclick={() => ingestCorpus(d)}>ingest into corpus.duckdb →</button>
+										{:else if canIngestGz && st.phase === 'idle'}
+											<button class="ds-action ds-action-heavy" onclick={() => ingestCorpus(d)} title="streams gunzip, json.loads in-memory, writes statements to corpus.duckdb. May take minutes and use 5–10× the compressed size in RAM.">ingest from .gz (decompresses in-memory) →</button>
 										{:else if st.phase === 'running'}
 											<span class="ds-action ds-action-running">ingesting…</span>
 										{:else if st.phase === 'done'}
@@ -692,13 +695,14 @@ con.close()`;
 							{#each benchmarks as d}
 								{@const st = actionState(d.path)}
 								{@const canRegister = d.shape.kind_detail === 'jsonl_records' && (d.shape.n_records ?? 0) > 0}
+								{@const canIngestGzB = d.shape.kind_detail === 'json_gz'}
 								<li class="ds-row">
 									<div class="ds-row-head">
 										<code class="ds-name">{d.filename}</code>
 										<span class="ds-meta">
 											<span>{fmtBytes(d.size_bytes)}</span>
 											<span class="muted">·</span>
-											<span>{d.shape.n_records ?? '—'} {d.shape.kind_detail === 'jsonl_records' ? 'records' : d.shape.kind_detail === 'indra_json' ? 'statements' : 'unparsed'}</span>
+											<span>{d.shape.n_records ?? '—'} {d.shape.kind_detail === 'jsonl_records' ? 'records' : d.shape.kind_detail === 'indra_json' ? 'statements' : d.shape.kind_detail === 'json_gz' ? 'compressed' : 'unparsed'}</span>
 											{#if d.shape.source_apis.length > 0}
 												<span class="muted">·</span>
 												<span>sources: {d.shape.source_apis.join(', ')}</span>
@@ -719,12 +723,14 @@ con.close()`;
 										{/if}
 										{#if canRegister && st.phase === 'idle'}
 											<button class="ds-action" onclick={() => registerAsTruthSet(d)} title="reads `tag` field on each record; registers as evidence-level truth_set; reruns validity for the latest scored run">register `tag` as truth_set →</button>
+										{:else if canIngestGzB && st.phase === 'idle'}
+											<button class="ds-action ds-action-heavy" onclick={() => ingestCorpus(d)} title="streams gunzip, json.loads in-memory, writes statements to corpus.duckdb. May take minutes and use 5–10× the compressed size in RAM.">ingest from .gz (decompresses in-memory) →</button>
 										{:else if st.phase === 'running'}
-											<span class="ds-action ds-action-running">registering…</span>
+											<span class="ds-action ds-action-running">{canIngestGzB ? 'ingesting…' : 'registering…'}</span>
 										{:else if st.phase === 'done'}
 											<span class="ds-action ds-action-done">✓ {st.message}</span>
 										{:else if st.phase === 'error'}
-											<span class="ds-action ds-action-error" title={st.message}>✗ register failed</span>
+											<span class="ds-action ds-action-error" title={st.message}>✗ {canIngestGzB ? 'ingest' : 'register'} failed</span>
 										{/if}
 									</div>
 									{#if d.shape.sample_lines.length > 0}
@@ -1223,6 +1229,13 @@ con.close()`;
 		border: 1px solid var(--accent);
 		color: var(--accent);
 		cursor: help;
+	}
+	/* Heavy / slow ops — distinct from cheap ingests. Same accent color
+	   so it reads as the same family of action, but a double-rule border
+	   warns the reader: this one takes minutes and burns RAM. */
+	.ds-action-heavy {
+		border: 1px double var(--accent);
+		padding: 0.15rem 0.6rem;
 	}
 	.ds-action-cancel {
 		font-family: var(--mono);

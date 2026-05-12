@@ -82,6 +82,23 @@ def tiny_indra_json(tmp_path: Path) -> str:
 
 
 @pytest.fixture()
+def tiny_indra_json_gz(tiny_indra_json: str, tmp_path: Path) -> str:
+    """Same statements as tiny_indra_json but written as gzip(json).
+
+    The dashboard's [ingest from .gz] affordance only works if the worker
+    handles .gz transparently — this exercises that path on a small file
+    instead of the real 460MB benchmark corpus.
+    """
+    import gzip
+
+    src = Path(tiny_indra_json).read_bytes()
+    gz_path = tmp_path / "tiny_indra.json.gz"
+    with gzip.open(gz_path, "wb") as fh:
+        fh.write(src)
+    return str(gz_path)
+
+
+@pytest.fixture()
 def tiny_jsonl(tmp_path: Path) -> str:
     """Three benchmark records with `tag` field and `source_hash` for
     evidence-kind truth-set registration."""
@@ -242,6 +259,49 @@ def test_ingest_is_idempotent(
         assert n == 3
     finally:
         con.close()
+
+
+def test_ingest_from_gzipped_json(
+    tmp_db: str, tiny_indra_json_gz: str, capsys: pytest.CaptureFixture[str]
+):
+    """Worker must handle `.json.gz` transparently — the dashboard's
+    `[ingest from .gz]` affordance routes the gzipped path to this same
+    verb without any client-side decompression."""
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json_gz, source_dump_id="test_gz"
+    )
+    rc = W.do_ingest(args)
+    assert rc == 0
+
+    events = _parse_events(capsys.readouterr().out)
+    loaded = _find_event(events, "loaded")
+    done = _find_event(events, "done")
+    assert loaded["n_statements"] == 3
+    assert done["n_statements"] == 3
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM statement WHERE source_dump_id='test_gz'"
+        ).fetchone()[0]
+        assert n == 3
+    finally:
+        con.close()
+
+
+def test_estimate_cost_from_gzipped_json(
+    tiny_indra_json_gz: str, capsys: pytest.CaptureFixture[str]
+):
+    """Cost preflight on a .gz dataset should produce the same per-model
+    estimates as on an uncompressed copy — proves the gz loader is wired
+    through to estimate-cost too, not just ingest."""
+    rc = W.do_estimate_cost(argparse.Namespace(path=tiny_indra_json_gz))
+    assert rc == 0
+    events = _parse_events(capsys.readouterr().out)
+    done = _find_event(events, "done")
+    assert done["n_statements"] == 3
+    by_model = {e["model_id"]: e for e in done["estimates"]}
+    assert by_model["claude-sonnet-4-6"]["cost_usd"] > 0
 
 
 # ---------- register-truth-set -----------------------------------------------
