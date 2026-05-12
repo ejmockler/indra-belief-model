@@ -526,7 +526,11 @@ con.close()`;
 		</section>
 	{:else}
 		<p class="dashboard-subtitle">
-			INDRA Statement belief rescorer. Below: the statement that disagreed most with INDRA's prior in the latest run, what changed, and where we are weakest.
+			{#if o.scorerRuns.length === 0}
+				INDRA Statement belief rescorer. No runs yet — ingest a dataset and click [score] on its card below to produce the first.
+			{:else}
+				INDRA Statement belief rescorer. Below: the statement that disagreed most with INDRA's prior in the latest run, what changed, and where we are weakest.
+			{/if}
 		</p>
 
 		<section class="focus">
@@ -545,7 +549,7 @@ con.close()`;
 				</p>
 			{:else}
 				<div class="focus-empty">
-					<p class="hint">no belief in focus yet · run <code>score_corpus</code> to produce one</p>
+					<p class="hint">no belief in focus yet · ingest a dataset and click [score] below — or jump to <a href="#datasets">datasets on disk</a></p>
 				</div>
 			{/if}
 		</section>
@@ -590,7 +594,7 @@ con.close()`;
 			<article class="run-feed-article">
 				<h2>runs</h2>
 				{#if o.scorerRuns.length === 0}
-					<p class="hint">no runs yet · invoke <code>score_corpus</code></p>
+					<p class="hint">no runs yet · ingest a dataset below and click its [score] action to produce the first</p>
 				{:else}
 					<ul class="run-feed">
 						{#each o.scorerRuns as r}
@@ -664,7 +668,7 @@ con.close()`;
 		{#if datasets && datasets.length > 0}
 			{@const corpora = datasets.filter((d) => d.kind === 'corpus')}
 			{@const benchmarks = datasets.filter((d) => d.kind === 'benchmark')}
-			<section class="datasets">
+			<section class="datasets" id="datasets">
 				<h2 class="ds-h">datasets on disk</h2>
 				<p class="ds-intro">JSON / JSONL files in <code>data/corpora/</code> and <code>data/benchmark/</code>. Buttons trigger Python workers that mutate <code>corpus.duckdb</code> — see the warnings on each commit button before clicking.</p>
 
