@@ -535,19 +535,30 @@ export interface RunNarrative {
  * page. Compares the named run to its predecessor by started_at. When there
  * is no predecessor, returns a self-summary ("first run, MAE 0.187").
  */
-export async function getRunNarrative(run_id: string): Promise<RunNarrative | null> {
+export async function getRunNarrative(
+	run_id: string,
+	explicit_prev_run_id?: string | null
+): Promise<RunNarrative | null> {
 	if (!dbExists()) return null;
 	const con = await connect();
 	try {
 		const qr = run_id.replace(/'/g, "''");
-		const prevRows = await rows<{ run_id: string }>(
-			con,
-			`SELECT run_id FROM score_run
-			 WHERE status='succeeded'
-			   AND started_at < (SELECT started_at FROM score_run WHERE run_id='${qr}')
-			 ORDER BY started_at DESC LIMIT 1`
-		);
-		const prev_run_id = prevRows[0]?.run_id ?? null;
+		// If caller named a specific predecessor (e.g. from the compare-runs
+		// route), use it as-is; otherwise auto-find the most-recent succeeded
+		// run that started before this one.
+		let prev_run_id: string | null = null;
+		if (explicit_prev_run_id !== undefined) {
+			prev_run_id = explicit_prev_run_id;
+		} else {
+			const prevRows = await rows<{ run_id: string }>(
+				con,
+				`SELECT run_id FROM score_run
+				 WHERE status='succeeded'
+				   AND started_at < (SELECT started_at FROM score_run WHERE run_id='${qr}')
+				 ORDER BY started_at DESC LIMIT 1`
+			);
+			prev_run_id = prevRows[0]?.run_id ?? null;
+		}
 
 		const calRow = await rows<{ mae: number | null; bias: number | null }>(
 			con,

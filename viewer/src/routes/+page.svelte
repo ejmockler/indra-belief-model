@@ -486,7 +486,7 @@ con.close()`;
 							{@const n = narratives[r.run_id]}
 							<li class="run-row" class:run-row-failed={r.status === 'failed'} class:run-row-running={r.status === 'running'}>
 								<span class="run-glyph" class:status-failed={r.status === 'failed'} class:status-running={r.status === 'running'} title={r.status}>{statusGlyph(r.status)}</span>
-								<code class="run-hash" title={r.run_id}>{r.run_id.slice(0, 8)}</code>
+								<a class="run-hash" href={`/runs/${r.run_id}`} title={r.run_id}><code>{r.run_id.slice(0, 8)}</code></a>
 								<span class="run-version" title={r.scorer_version}>{r.scorer_version.length > 22 ? r.scorer_version.slice(0, 21) + '…' : r.scorer_version}</span>
 								<span class="run-when" title={r.started_at}>{r.started_at.replace(/\.\d+$/, '').replace(/^(\d{4}-\d{2}-\d{2}) /, '$1·')}</span>
 								<span class="run-narrative">
@@ -930,6 +930,11 @@ con.close()`;
 	}
 	.run-hash {
 		color: var(--ink);
+		text-decoration: none;
+	}
+	.run-hash:hover {
+		color: var(--accent);
+		text-decoration: underline;
 	}
 	.run-version {
 		color: var(--ink-muted);
