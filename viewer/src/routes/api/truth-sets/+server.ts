@@ -21,6 +21,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { closeInstance, dbPath } from '$lib/db';
+import { assertPathUnderData } from '$lib/pathGuard';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -47,8 +48,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const field = body.field as string | undefined;
 	const target_hash_field = body.target_hash_field as string | undefined;
 
-	if (!path || typeof path !== 'string') throw error(400, 'path required');
-	if (!existsSync(path)) throw error(404, `file not found: ${path}`);
+	const safePath = assertPathUnderData(path);
 	if (!truth_set_id || !TRUTH_SET_ID_RE.test(truth_set_id))
 		throw error(400, 'truth_set_id must match /^[a-z][a-z0-9_]{2,63}$/i');
 	if (!truth_set_name) throw error(400, 'truth_set_name required');
@@ -60,7 +60,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		'-m', 'indra_belief.worker',
 		'register-truth-set',
 		'--db', dbPath(),
-		'--path', path,
+		'--path', safePath,
 		'--truth-set-id', truth_set_id,
 		'--truth-set-name', truth_set_name,
 		'--target-kind', target_kind,

@@ -9,7 +9,8 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { dbPath } from '$lib/db';
-import { error, json } from '@sveltejs/kit';
+import { assertPathUnderData } from '$lib/pathGuard';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 function pythonBin(): string {
@@ -27,10 +28,9 @@ function repoRoot(): string {
 export const POST: RequestHandler = async ({ request }) => {
 	const body = (await request.json()) as Record<string, unknown>;
 	const path = body.path as string | undefined;
-	if (!path || typeof path !== 'string') throw error(400, 'path required');
-	if (!existsSync(path)) throw error(404, `file not found: ${path}`);
+	const safePath = assertPathUnderData(path);
 
-	const args = ['-m', 'indra_belief.worker', 'estimate-cost', '--path', path];
+	const args = ['-m', 'indra_belief.worker', 'estimate-cost', '--path', safePath];
 	const py = pythonBin();
 	const events: Array<Record<string, unknown>> = [];
 	let stderrBuf = '';

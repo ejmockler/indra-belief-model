@@ -26,6 +26,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { closeInstance, dbPath } from '$lib/db';
+import { assertPathUnderData } from '$lib/pathGuard';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -49,8 +50,7 @@ export const POST: RequestHandler = async (event) => {
 	const path = body.path as string | undefined;
 	const source_dump_id = body.source_dump_id as string | undefined;
 
-	if (!path || typeof path !== 'string') throw error(400, 'path required');
-	if (!existsSync(path)) throw error(404, `file not found: ${path}`);
+	const safePath = assertPathUnderData(path);
 	if (!source_dump_id || !SOURCE_DUMP_RE.test(source_dump_id))
 		throw error(400, 'source_dump_id must match /^[a-z][a-z0-9_-]{1,63}$/i');
 
@@ -58,7 +58,7 @@ export const POST: RequestHandler = async (event) => {
 		'-m', 'indra_belief.worker',
 		'ingest',
 		'--db', dbPath(),
-		'--path', path,
+		'--path', safePath,
 		'--source-dump-id', source_dump_id
 	];
 	const py = pythonBin();

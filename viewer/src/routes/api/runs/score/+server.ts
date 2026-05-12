@@ -26,6 +26,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { closeInstance, dbPath } from '$lib/db';
+import { assertPathUnderData } from '$lib/pathGuard';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -54,8 +55,7 @@ export const POST: RequestHandler = async (event) => {
 	const scorer_version = body.scorer_version as string | undefined;
 	const cost_threshold_usd = body.cost_threshold_usd as number | undefined;
 
-	if (!path || typeof path !== 'string') throw error(400, 'path required');
-	if (!existsSync(path)) throw error(404, `file not found: ${path}`);
+	const safePath = assertPathUnderData(path);
 	if (!source_dump_id || !SOURCE_DUMP_RE.test(source_dump_id))
 		throw error(400, 'source_dump_id must match /^[a-z][a-z0-9_-]{1,63}$/i');
 	if (!model || !MODEL_RE.test(model))
@@ -69,7 +69,7 @@ export const POST: RequestHandler = async (event) => {
 		'-m', 'indra_belief.worker',
 		'score',
 		'--db', dbPath(),
-		'--path', path,
+		'--path', safePath,
 		'--source-dump-id', source_dump_id,
 		'--model', model,
 		'--scorer-version', scorer_version
