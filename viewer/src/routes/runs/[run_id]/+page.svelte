@@ -132,7 +132,7 @@
 	:global(:root) {
 		--ink: #1a1a1a;
 		--ink-muted: #6a6a6a;
-		--ink-faint: #a8a8a8;
+		--ink-faint: #727272;
 		--paper: #fdfcf8;
 		--rule: #e6e2d6;
 		--accent: #7d2a1a;

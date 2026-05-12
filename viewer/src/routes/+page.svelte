@@ -715,7 +715,7 @@ con.close()`;
 										{:else if canIngestGz && st.phase === 'idle'}
 											<button class="ds-action ds-action-heavy" onclick={() => ingestCorpus(d)} title="streams gunzip, json.loads in-memory, writes statements to corpus.duckdb. May take minutes and use 5–10× the compressed size in RAM.">ingest from .gz (decompresses in-memory) →</button>
 										{:else if st.phase === 'running'}
-											<span class="ds-action ds-action-running">
+											<span class="ds-action ds-action-running" role="status" aria-live="polite">
 												{#if st.n_total != null && st.n_total > 0 && st.n_done != null}
 													ingested {st.n_done.toLocaleString()} / {st.n_total.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
 												{:else if st.n_done != null && st.n_done > 0}
@@ -784,7 +784,7 @@ con.close()`;
 													<button class="ds-action ds-action-cancel" onclick={() => setPre(d.path, { phase: 'idle' })}>nevermind</button>
 												</div>
 											{:else if pre.phase === 'scoring'}
-												<div class="ds-cost-panel ds-scoring">
+												<div class="ds-cost-panel ds-scoring" role="status" aria-live="polite">
 													<p class="ds-scoring-line">
 														<strong>spending on {pre.model}</strong>
 														{#if pre.n_evidences_total != null}· {pre.n_evidences_done} / {pre.n_evidences_total} evidences{:else}· {pre.n_evidences_done} evidences scored{/if}
@@ -850,7 +850,7 @@ con.close()`;
 										{:else if canIngestGzB && st.phase === 'idle'}
 											<button class="ds-action ds-action-heavy" onclick={() => ingestCorpus(d)} title="streams gunzip, json.loads in-memory, writes statements to corpus.duckdb. May take minutes and use 5–10× the compressed size in RAM.">ingest from .gz (decompresses in-memory) →</button>
 										{:else if st.phase === 'running' && canIngestGzB}
-											<span class="ds-action ds-action-running">
+											<span class="ds-action ds-action-running" role="status" aria-live="polite">
 												{#if st.n_total != null && st.n_total > 0 && st.n_done != null}
 													ingested {st.n_done.toLocaleString()} / {st.n_total.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
 												{:else if st.n_done != null && st.n_done > 0}
@@ -926,7 +926,7 @@ con.close()`;
 	:global(:root) {
 		--ink: #1a1a1a;
 		--ink-muted: #6a6a6a;
-		--ink-faint: #a8a8a8;
+		--ink-faint: #727272;
 		--paper: #fdfcf8;
 		--rule: #e6e2d6;
 		--accent: #7d2a1a;
