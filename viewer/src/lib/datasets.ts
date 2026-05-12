@@ -7,9 +7,10 @@
  * `datasetShape()` and is invoked per-descriptor on demand — never on the
  * dashboard's hot path.
  */
-import { readdirSync, statSync, existsSync, openSync, readSync, closeSync } from 'node:fs';
+import { readdirSync, statSync, existsSync, openSync, readSync, closeSync, readFileSync, createReadStream } from 'node:fs';
 import { resolve, basename, relative, join } from 'node:path';
-import { dbPath } from './db';
+import { createInterface } from 'node:readline';
+import { connect, dbExists, dbPath } from './db';
 
 export type DatasetKind = 'corpus' | 'benchmark';
 
@@ -29,6 +30,139 @@ export interface DatasetShape {
 	source_apis: string[];
 	sample_lines: string[];
 	notes: string[];
+}
+
+export interface IngestStatus {
+	/** stmt_hashes extracted from the file (capped). */
+	n_in_file: number;
+	/** stmt_hashes from the file that already exist in corpus.duckdb. */
+	n_already_ingested: number;
+	/** True iff the file's records were sampled rather than fully scanned. */
+	sampled: boolean;
+	notes: string[];
+}
+
+/**
+ * Convert an INDRA hash integer (signed-64 or stringified) to the 16-hex
+ * canonical form used by `corpus.statement.stmt_hash`. Mirrors
+ * `corpus/loader.py::_hex`: `n & ((1<<64)-1)` then format as 16-hex.
+ */
+function intToStmtHash(s: string | number | bigint): string | null {
+	try {
+		let n = typeof s === 'bigint' ? s : BigInt(s as string | number);
+		const mask = (1n << 64n) - 1n;
+		return (n & mask).toString(16).padStart(16, '0');
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Extract a record's canonical stmt_hash. Handles both:
+ *   - benchmark JSONL records:  `matches_hash` (stringified int)
+ *   - INDRA Statement JSON:     `matches_hash` (string, also int form);
+ *                               or `id` / `pa_hash` as fallback.
+ */
+function extractStmtHash(rec: Record<string, unknown>): string | null {
+	const candidates = [rec.matches_hash, rec.pa_hash, rec.id];
+	for (const c of candidates) {
+		if (c == null) continue;
+		if (typeof c === 'string') {
+			// Already 16-hex?
+			if (/^[a-f0-9]{16}$/i.test(c)) return c.toLowerCase();
+			const h = intToStmtHash(c);
+			if (h) return h;
+		} else if (typeof c === 'number' || typeof c === 'bigint') {
+			const h = intToStmtHash(c);
+			if (h) return h;
+		}
+	}
+	return null;
+}
+
+const INGEST_STATUS_CAP = 50_000;
+
+/**
+ * Scan a dataset and report how many of its records are already in
+ * corpus.duckdb. Capped at `INGEST_STATUS_CAP` records to bound dashboard
+ * load time on multi-million-record files.
+ */
+export async function getDatasetIngestStatus(d: DatasetDescriptor): Promise<IngestStatus | null> {
+	if (!dbExists()) return null;
+	const notes: string[] = [];
+	let hashes: string[] = [];
+	let sampled = false;
+
+	if (d.ext === 'json.gz') {
+		notes.push('gzipped — ingest-status check deferred until decompressed');
+		return { n_in_file: 0, n_already_ingested: 0, sampled: false, notes };
+	}
+	if (d.ext === 'jsonl') {
+		// Stream lines; cap at INGEST_STATUS_CAP.
+		const seen = new Set<string>();
+		const rl = createInterface({
+			input: createReadStream(d.path, { encoding: 'utf-8' }),
+			crlfDelay: Infinity
+		});
+		for await (const line of rl) {
+			if (seen.size >= INGEST_STATUS_CAP) {
+				sampled = true;
+				rl.close();
+				break;
+			}
+			if (!line.trim()) continue;
+			try {
+				const r = JSON.parse(line) as Record<string, unknown>;
+				const h = extractStmtHash(r);
+				if (h) seen.add(h);
+			} catch {
+				// ignore
+			}
+		}
+		hashes = [...seen];
+	} else if (d.ext === 'json') {
+		try {
+			const txt = readFileSync(d.path, 'utf-8');
+			const parsed: unknown = JSON.parse(txt);
+			const stmts: Array<Record<string, unknown>> = Array.isArray(parsed)
+				? (parsed as Array<Record<string, unknown>>)
+				: parsed && typeof parsed === 'object' && Array.isArray((parsed as { statements?: unknown }).statements)
+					? ((parsed as { statements: Array<Record<string, unknown>> }).statements)
+					: [];
+			const seen = new Set<string>();
+			for (const s of stmts) {
+				if (seen.size >= INGEST_STATUS_CAP) {
+					sampled = true;
+					break;
+				}
+				const h = extractStmtHash(s);
+				if (h) seen.add(h);
+			}
+			hashes = [...seen];
+		} catch (e) {
+			notes.push(`parse failed: ${String((e as Error).message ?? e).slice(0, 100)}`);
+			return { n_in_file: 0, n_already_ingested: 0, sampled, notes };
+		}
+	}
+
+	const n_in_file = hashes.length;
+	if (n_in_file === 0) {
+		notes.push('no statement-shaped records detected (no matches_hash field)');
+		return { n_in_file, n_already_ingested: 0, sampled, notes };
+	}
+
+	const con = await connect();
+	try {
+		const escaped = hashes.map((h) => `'${h.replace(/'/g, "''")}'`).join(',');
+		const reader = await con.runAndReadAll(
+			`SELECT COUNT(*) AS n FROM statement WHERE stmt_hash IN (${escaped})`
+		);
+		const rows = reader.getRowObjects();
+		const n_already_ingested = rows.length > 0 ? Number(rows[0].n) : 0;
+		return { n_in_file, n_already_ingested, sampled, notes };
+	} finally {
+		con.disconnectSync?.();
+	}
 }
 
 /**

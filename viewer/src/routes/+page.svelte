@@ -329,6 +329,18 @@ con.close()`;
 												<span>sources: {d.shape.source_apis.join(', ')}</span>
 											{/if}
 										</span>
+										{#if d.ingest}
+											{@const ing = d.ingest}
+											{#if ing.n_in_file === 0}
+												<span class="ds-badge ds-badge-unknown" title={ing.notes.join(' · ')}>ingest status unknown</span>
+											{:else if ing.n_already_ingested === 0}
+												<span class="ds-badge ds-badge-fresh">not ingested</span>
+											{:else if ing.n_already_ingested >= ing.n_in_file}
+												<span class="ds-badge ds-badge-done">{ing.sampled ? `${ing.n_already_ingested}+ ingested` : 'fully ingested'}</span>
+											{:else}
+												<span class="ds-badge ds-badge-partial">partial · {ing.n_already_ingested}/{ing.n_in_file} ingested</span>
+											{/if}
+										{/if}
 									</div>
 									{#if d.shape.sample_lines.length > 0}
 										<ul class="ds-samples">
@@ -365,6 +377,16 @@ con.close()`;
 												<span>sources: {d.shape.source_apis.join(', ')}</span>
 											{/if}
 										</span>
+										{#if d.ingest && d.ingest.n_in_file > 0}
+											{@const ing = d.ingest}
+											{#if ing.n_already_ingested === 0}
+												<span class="ds-badge ds-badge-fresh">not yet ingested</span>
+											{:else if ing.n_already_ingested >= ing.n_in_file}
+												<span class="ds-badge ds-badge-done">{ing.sampled ? `${ing.n_already_ingested}+ ingested` : 'fully ingested'}</span>
+											{:else}
+												<span class="ds-badge ds-badge-partial">partial · {ing.n_already_ingested}/{ing.n_in_file} ingested</span>
+											{/if}
+										{/if}
 									</div>
 									{#if d.shape.sample_lines.length > 0}
 										<ul class="ds-samples">
@@ -809,6 +831,19 @@ con.close()`;
 		color: var(--ink);
 		line-height: 1.4;
 	}
+	.ds-badge {
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		padding: 0.05rem 0.4rem;
+		border: 1px solid currentColor;
+		text-transform: lowercase;
+		letter-spacing: 0.04em;
+	}
+	.ds-badge-fresh { color: var(--ink-muted); }
+	.ds-badge-partial { color: var(--accent); }
+	.ds-badge-done { color: var(--ok-green); }
+	.ds-badge-unknown { color: var(--ink-faint); }
+
 	.ds-notes {
 		font-family: var(--mono);
 		font-size: 0.7rem;

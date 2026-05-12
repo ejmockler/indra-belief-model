@@ -36,14 +36,20 @@ Perceptual engineering is woven through every UI-bearing node. Brutalist review 
 
 ### E0 — Pipeline-execution channel
 
-The bridge between Node (SvelteKit server endpoints) and Python (the scorer + ingest + truth-set machinery). Two viable shapes:
+**Decision (U3.1, 2026-05-11): subprocess.** SvelteKit server endpoints spawn `python -m indra_belief.worker <verb> ...` via `node:child_process.spawn`. The worker reads JSON args from stdin / argv and writes structured events (one per line) to stdout for the SvelteKit endpoint to parse + stream over SSE.
 
-- **Subprocess**: `node:child_process.spawn("python", ["-m", "indra_belief.worker", "<verb>", ...args])`. SSE for progress events.
-- **Sidecar HTTP**: a tiny Python FastAPI on `localhost:5181` exposing `POST /ingest`, `POST /score`, `POST /register_truth_set`. SvelteKit proxies.
+Rationale:
+- Single user, single machine: a sidecar adds zero functional value.
+- No other callers planned. The user explicitly rejected a user-facing CLI; the worker is implementation detail, never typed by hand.
+- `npm run dev` starts everything; Python is spawned on demand. No second process to monitor or restart.
+- Reversibility: if a second caller (a notebook integration, a remote CLI) appears, swap subprocess → sidecar HTTP without changing the viewer's endpoint surface (`POST /api/datasets/<path>/ingest`, etc.). The contract is the same; only the call site moves.
 
-**Architectural decision deferred to U3.1.** Subprocess is simpler for a single-developer single-machine workflow; sidecar wins if anything else (notebooks, scripts, remote callers) needs the same API.
+Risks named:
+- Path resolution: SvelteKit must locate the Python binary. Use `process.env.PYTHON_BIN` with fallback to `.venv/bin/python`. Document.
+- Long-running tasks blocking the Node event loop: streaming line-by-line via stdout pipes (not `exec`) keeps Node responsive.
+- Crash handling: a failed worker leaves the DuckDB in whatever state it was in. The ingest is wrapped in a transaction; score_corpus already writes per-evidence so partial state is recoverable.
 
-Either way: the *contract* is identical from the viewer's side — `POST /api/run/score`, `POST /api/datasets/<path>/ingest`, `POST /api/truth-sets`, with SSE for streaming.
+Either way: the *contract* from the viewer's side stays identical — `POST /api/run/score`, `POST /api/datasets/<path>/ingest`, `POST /api/truth-sets`, with SSE for streaming.
 
 ### E1 — Dataset descriptor model
 

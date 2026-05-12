@@ -8,7 +8,14 @@ import {
 	type HeuristicCoverage,
 	type RunNarrative
 } from '$lib/db';
-import { datasetShape, getDatasets, type DatasetDescriptor, type DatasetShape } from '$lib/datasets';
+import {
+	datasetShape,
+	getDatasets,
+	getDatasetIngestStatus,
+	type DatasetDescriptor,
+	type DatasetShape,
+	type IngestStatus
+} from '$lib/datasets';
 import type { PageServerLoad } from './$types';
 
 const STMT_HASH_RE = /^[a-f0-9]{16}$/i;
@@ -39,11 +46,15 @@ export const load: PageServerLoad = async ({ url }) => {
 		coverage = await getHeuristicCoverage(overview.latestValidity.run_id);
 	}
 
-	// U2: filesystem-discovered datasets + lazy shape preview.
-	const datasets: Array<DatasetDescriptor & { shape: DatasetShape }> = getDatasets().map((d) => ({
-		...d,
-		shape: datasetShape(d)
-	}));
+	// U2: filesystem-discovered datasets + lazy shape preview + ingest status.
+	const baseDescriptors = getDatasets();
+	const datasets: Array<DatasetDescriptor & { shape: DatasetShape; ingest: IngestStatus | null }> = await Promise.all(
+		baseDescriptors.map(async (d) => ({
+			...d,
+			shape: datasetShape(d),
+			ingest: await getDatasetIngestStatus(d)
+		}))
+	);
 
 	return { overview, focus, findings, residuals, narratives, coverage, datasets };
 };
