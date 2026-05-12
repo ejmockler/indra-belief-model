@@ -9,6 +9,7 @@
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { error } from '@sveltejs/kit';
 import {
 	computeAttributions,
 	summarizeAcrossEvidences,
@@ -70,9 +71,21 @@ export async function connect(): Promise<DuckDBConnection> {
 		// that spawn a Python writer (ingest / score) MUST call
 		// closeInstance() before spawning so the worker can acquire its lock.
 		// The next connect() lazy-reopens. Dashboard reads issued while a
-		// writer holds the lock will fail until the writer exits — surface
-		// that explicitly rather than retrying silently.
-		_instance = await DuckDBInstance.create(path, { access_mode: 'READ_ONLY' });
+		// writer holds the lock surface as a typed 503 (caught by
+		// +error.svelte and rendered as a friendly waiting screen) rather
+		// than a raw 500 with a DuckDB stack trace.
+		try {
+			_instance = await DuckDBInstance.create(path, { access_mode: 'READ_ONLY' });
+		} catch (e) {
+			const msg = (e as Error)?.message ?? String(e);
+			if (msg.includes('Could not set lock') || msg.includes('Conflicting lock')) {
+				throw error(
+					503,
+					'writer_in_progress: an ingest or score worker is holding the DuckDB write lock. Wait for it to finish, then reload.'
+				);
+			}
+			throw e;
+		}
 		_instanceMtimeMs = currentMtime;
 	}
 	return _instance.connect();
