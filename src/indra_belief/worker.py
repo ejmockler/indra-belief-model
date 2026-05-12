@@ -105,7 +105,16 @@ def do_score(args: argparse.Namespace) -> int:
     try:
         apply_schema(con)
         stmts = stmts_from_json_file(args.path)
-        emit({"event": "loaded", "n_statements": len(stmts)})
+        # Count evidences so the viewer's progress bar has a real denominator
+        # rather than a fabricated multiplier.
+        n_evidences = sum(
+            len(getattr(s, "evidence", None) or []) for s in stmts
+        )
+        emit({
+            "event": "loaded",
+            "n_statements": len(stmts),
+            "n_evidences": n_evidences,
+        })
 
         # Idempotent ingest — safe to call even if the user already clicked
         # [ingest] before. INSERT OR REPLACE on the natural key (stmt_hash).

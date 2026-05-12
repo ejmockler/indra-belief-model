@@ -342,9 +342,15 @@ function collectSourceApis(records: unknown[]): string[] {
 }
 
 function extractSamplePreviewFromStatement(s: unknown): string {
-	if (!s || typeof s !== 'object') return '(unparseable)';
+	if (!s || typeof s !== 'object') return '(item is not a JSON object — not an INDRA Statement)';
 	const rec = s as Record<string, unknown>;
-	const type = (rec.type as string) ?? 'Statement';
+	const type = rec.type;
+	if (typeof type !== 'string') {
+		// Honest empty: name the shape failure rather than emit a misleading
+		// `Statement()` placeholder.
+		const keys = Object.keys(rec).slice(0, 5).join(', ');
+		return `(no \`type\` field — not an INDRA Statement; keys: ${keys || '<empty>'})`;
+	}
 	const agents: string[] = [];
 	for (const role of ['enz', 'subj', 'sub', 'obj', 'gef', 'gap', 'ras']) {
 		const a = rec[role] as Record<string, unknown> | undefined;

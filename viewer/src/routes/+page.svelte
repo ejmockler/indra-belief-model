@@ -140,9 +140,13 @@
 		}
 	}
 
-	async function scoreCorpus(d: { path: string; filename: string }, model: string) {
+	async function scoreCorpus(d: { path: string; filename: string }, model: string, estimatedCostUsd: number) {
 		const source_dump_id = slugFromPath(d.path);
 		const scorer_version = 'prod-v1';
+		// Pass the projected cost as a hard cap so the worker aborts if its own
+		// upfront estimate (run against the same file) lands materially higher
+		// — a check against the file/estimator drifting since preview.
+		const cost_threshold_usd = Math.max(0.01, estimatedCostUsd * 1.25);
 		setPre(d.path, {
 			phase: 'scoring',
 			model,
@@ -161,7 +165,8 @@
 					path: d.path,
 					source_dump_id,
 					model,
-					scorer_version
+					scorer_version,
+					cost_threshold_usd
 				}),
 				signal: ctrl.signal
 			});
@@ -194,7 +199,9 @@
 					if (t === 'loaded') {
 						const cur = preState(d.path);
 						if (cur.phase === 'scoring') {
-							setPre(d.path, { ...cur, n_evidences_total: Number(ev.n_statements) * 2 });
+							// Honest denominator from the worker; null if absent
+							const n_total = typeof ev.n_evidences === 'number' ? ev.n_evidences : null;
+							setPre(d.path, { ...cur, n_evidences_total: n_total });
 						}
 					} else if (t === 'progress') {
 						const cur = preState(d.path);
@@ -548,7 +555,7 @@ con.close()`;
 			{@const benchmarks = datasets.filter((d) => d.kind === 'benchmark')}
 			<section class="datasets">
 				<h2 class="ds-h">datasets on disk</h2>
-				<p class="ds-intro">JSON / JSONL files in <code>data/corpora/</code> and <code>data/benchmark/</code>. Read-only for now — actions ship in U4 (register as truth_set) and U5 (ingest + score).</p>
+				<p class="ds-intro">JSON / JSONL files in <code>data/corpora/</code> and <code>data/benchmark/</code>. Buttons trigger Python workers that mutate <code>corpus.duckdb</code> — see the warnings on each commit button before clicking.</p>
 
 				<div class="ds-group">
 					<h3 class="ds-group-h">data/corpora/ <span class="muted">({corpora.length})</span></h3>
@@ -613,38 +620,51 @@ con.close()`;
 											{:else if pre.phase === 'estimated'}
 												<div class="ds-cost-panel">
 													<p class="ds-cost-intro">
-														Projected cost to score this corpus (assumes ~5 LLM calls per evidence; substrate short-circuits typically reduce this 30–60%):
+														Projected cost <em>before</em> substrate short-circuits (which typically reduce actual spend 30–60%). Each row is a separate spend commitment to that model's API:
 													</p>
 													<table class="ds-cost-table">
 														<thead>
-															<tr><th>model</th><th class="num">cost</th><th class="num">calls</th><th></th></tr>
+															<tr><th>model</th><th class="num">est cost</th><th class="num">est range</th><th class="num">calls</th><th></th></tr>
 														</thead>
 														<tbody>
 															{#each pre.estimates as e}
+																{@const lowEnd = e.cost_usd * 0.4}
+																{@const highEnd = e.cost_usd}
 																<tr>
 																	<td><code>{e.model_id}</code></td>
 																	<td class="num">{fmtCost(e.cost_usd)}</td>
+																	<td class="num muted">{fmtCost(lowEnd)}–{fmtCost(highEnd)}</td>
 																	<td class="num">{e.n_llm_calls_est.toLocaleString()}</td>
-																	<td><button class="ds-action ds-action-confirm" onclick={() => scoreCorpus(d, e.model_id)} title="ingests + scores · cost is best-estimate · cancel by closing the tab">score with this →</button></td>
+																	<td>
+																		<button
+																			class="ds-action-spend"
+																			onclick={() => scoreCorpus(d, e.model_id, e.cost_usd)}
+																			title={`will spend up to ${fmtCost(e.cost_usd * 1.25)} via ${e.model_id}'s API and write scorer_step + score_run rows · cancel via the button on the scoring panel or by closing this tab`}
+																		>
+																			spend up to {fmtCost(e.cost_usd * 1.25)} on {e.model_id} →
+																		</button>
+																	</td>
 																</tr>
 															{/each}
 														</tbody>
 													</table>
 													<p class="ds-cost-warn">
-														Scoring is destructive of API budget. Closing the browser tab does not stop the worker — wait for it to finish or kill the python process by hand.
+														Clicking a spend button charges your provider's API key and writes rows into <code>corpus.duckdb</code>. The worker accepts a hard cap (1.25× est); spend beyond that aborts. Cancel via the button on the scoring panel — or close the tab and the worker dies via SIGTERM.
 													</p>
-													<button class="ds-action ds-action-cancel" onclick={() => setPre(d.path, { phase: 'idle' })}>cancel</button>
+													<button class="ds-action ds-action-cancel" onclick={() => setPre(d.path, { phase: 'idle' })}>nevermind</button>
 												</div>
 											{:else if pre.phase === 'scoring'}
 												<div class="ds-cost-panel ds-scoring">
 													<p class="ds-scoring-line">
-														<strong>scoring with {pre.model}</strong>
-														{#if pre.n_evidences_total}· {pre.n_evidences_done} / {pre.n_evidences_total} evidences{:else}· {pre.n_evidences_done} evidences scored{/if}
+														<strong>spending on {pre.model}</strong>
+														{#if pre.n_evidences_total != null}· {pre.n_evidences_done} / {pre.n_evidences_total} evidences{:else}· {pre.n_evidences_done} evidences scored{/if}
 														· elapsed {Math.round((Date.now() - pre.t_started) / 1000)}s
 														{#if pre.latest_stmt}<span class="muted">· latest stmt {pre.latest_stmt.slice(0, 8)}</span>{/if}
 													</p>
-													<p class="ds-cost-warn muted">stream connected; partial state is persisted per evidence — cancel below to stop the worker (sends SIGTERM, then SIGKILL after 2s).</p>
-													<button class="ds-action ds-action-cancel" onclick={() => cancelScore(d.path)}>cancel run →</button>
+													<p class="ds-cost-warn">
+														Stream connected · partial state persists per evidence · re-running picks up unfinished rows. <strong>Closing the tab cancels the run</strong> (the endpoint kills the worker on disconnect via SIGTERM, then SIGKILL after 2s).
+													</p>
+													<button class="ds-action-cancel-prominent" onclick={() => cancelScore(d.path)}>cancel this run →</button>
 												</div>
 											{:else if pre.phase === 'scored'}
 												<span class="ds-action ds-action-done">✓ scored as run {pre.run_id.slice(0, 8)} · {pre.n_evidences} evidences · {pre.duration_s.toFixed(1)}s</span>
@@ -1186,12 +1206,59 @@ con.close()`;
 		color: var(--accent);
 		cursor: help;
 	}
-	.ds-action-confirm {
-		font-weight: 500;
-	}
 	.ds-action-cancel {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		padding: 0.15rem 0.5rem;
 		border: 1px solid var(--ink-faint);
+		background: transparent;
 		color: var(--ink-muted);
+		cursor: pointer;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+	}
+	.ds-action-cancel:hover {
+		color: var(--ink);
+		border-color: var(--ink);
+	}
+
+	/* Distinct visual species for spend-commit buttons: filled accent,
+	   not the bordered "navigation" species. P11 reversibility legibility —
+	   the irreversible action must NOT look like the safe ones around it. */
+	.ds-action-spend {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		padding: 0.3rem 0.7rem;
+		border: 1px solid var(--accent);
+		background: var(--accent);
+		color: var(--paper);
+		cursor: pointer;
+		font-weight: 500;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+	}
+	.ds-action-spend:hover {
+		filter: brightness(1.1);
+	}
+
+	/* Cancel-in-flight button: visible, distinct species, but quieter than
+	   spend. Outlined accent — signals "destructive of in-flight work but
+	   not of API budget". */
+	.ds-action-cancel-prominent {
+		font-family: var(--mono);
+		font-size: 0.86rem;
+		padding: 0.35rem 0.8rem;
+		border: 1.5px solid var(--accent);
+		background: transparent;
+		color: var(--accent);
+		cursor: pointer;
+		font-weight: 500;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+		margin-top: 0.4rem;
+	}
+	.ds-action-cancel-prominent:hover {
+		background: var(--accent-wash);
 	}
 
 	.ds-preflight {
@@ -1242,7 +1309,6 @@ con.close()`;
 		margin: 0.4rem 0 0.6rem;
 		line-height: 1.45;
 	}
-	.ds-cost-warn.muted { color: var(--ink-muted); }
 
 	.ds-scoring {
 		border-left-color: var(--ok-green);

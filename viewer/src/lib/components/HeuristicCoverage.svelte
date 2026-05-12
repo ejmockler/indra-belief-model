@@ -34,14 +34,20 @@
 	const summary = $derived.by(() => {
 		const slots = totalProbeSlots;
 		if (slots === 0) return 'no probes recorded for this run';
+		const mean = coverage.mean_invoked_probes;
 		const sPct = pctStr(pctOf(totalSubstrate, slots));
 		const lPct = pctStr(pctOf(totalLlm, slots));
-		const nPct = pctStr(pctOf(totalNotrun, slots));
-		const llmEvidence =
-			totalLlm > 0
-				? `LLM fired for ${lPct} of probe slots`
-				: `the LLM did not fire in this run`;
-		return `Substrate (regex / Gilda / catalog) resolved ${sPct} of probe slots; ${llmEvidence}; ${nPct} short-circuited (probe didn't run for that evidence).`;
+		// Lead with the sharpest finding — the average number of probes that
+		// actually fired. "the LLM did not fire" was a passive observation;
+		// "the system invoked X of 4 probes per evidence" is the instrument state.
+		const leadFact = `On average the system invoked ${mean.toFixed(2)} of 4 probes per evidence — the remaining ${(4 - mean).toFixed(2)} short-circuited (a preceding probe's finding made them unnecessary).`;
+		const substrateFact = totalSubstrate > 0
+			? ` Of the probes that fired, substrate (regex / Gilda / catalog) resolved ${sPct} without calling an LLM`
+			: ` No probes resolved via substrate.`;
+		const llmFact = totalLlm > 0
+			? `; ${lPct} required an LLM call.`
+			: `; no LLM calls were made this run.`;
+		return leadFact + substrateFact + llmFact;
 	});
 
 	function probeOrder(p: ProbeCoverageRow): number {
@@ -61,6 +67,9 @@
 	<p class="cov-summary">{summary}</p>
 
 	{#if coverage.n_evidences > 0}
+		<p class="cov-legend" aria-hidden="true">
+			pillbar colors: <span class="cov-leg cov-leg-substrate">■</span> substrate · <span class="cov-leg cov-leg-llm">■</span> llm · <span class="cov-leg cov-leg-abstain">■</span> abstain · <span class="cov-leg cov-leg-notrun">▦</span> probe didn't run (short-circuited by an earlier finding)
+		</p>
 		<table class="cov-table" aria-label="per-probe substrate / LLM / abstain / not-run breakdown">
 			<thead>
 				<tr>
@@ -99,19 +108,19 @@
 
 		<div class="cov-aux">
 			<span class="cov-aux-row">
-				<span class="cov-aux-label">all-substrate evidences</span>
-				<span class="cov-aux-val">{pctStr(coverage.all_substrate_rate * 100)}</span>
-				<span class="muted">— evidences where every probe was substrate-resolved (zero LLM calls)</span>
+				<span class="cov-aux-label">mean probes invoked / evidence</span>
+				<span class="cov-aux-val">{coverage.mean_invoked_probes.toFixed(2)} of 4</span>
+				<span class="muted">— how many of the four probes actually fired on the average evidence</span>
 			</span>
 			<span class="cov-aux-row">
-				<span class="cov-aux-label">short-circuited evidences</span>
-				<span class="cov-aux-val">{pctStr(coverage.short_circuited_rate * 100)}</span>
-				<span class="muted">— at least one probe did not fire (earlier probe decided the outcome)</span>
+				<span class="cov-aux-label">evidences with ≥1 short-circuit</span>
+				<span class="cov-aux-val">{pctStr(coverage.short_circuited_rate * 100)} of {coverage.n_evidences}</span>
+				<span class="muted">— a preceding probe's finding made later probes unnecessary</span>
 			</span>
 			<span class="cov-aux-row">
-				<span class="cov-aux-label">mean probes invoked per evidence</span>
-				<span class="cov-aux-val">{coverage.mean_invoked_probes.toFixed(2)}</span>
-				<span class="muted">of 4</span>
+				<span class="cov-aux-label">evidences with zero LLM calls</span>
+				<span class="cov-aux-val">{pctStr(coverage.all_substrate_rate * 100)} of {coverage.n_evidences}</span>
+				<span class="muted">— every invoked probe was answered by substrate (regex / Gilda / catalog)</span>
 			</span>
 		</div>
 	{:else}
@@ -146,6 +155,16 @@
 		line-height: 1.5;
 		font-variant-numeric: tabular-nums;
 	}
+	.cov-legend {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		color: var(--ink-muted);
+		margin: 0 0 0.4rem;
+	}
+	.cov-leg-substrate { color: var(--ok-green); }
+	.cov-leg-llm { color: var(--accent); }
+	.cov-leg-abstain { color: var(--ink-muted); }
+	.cov-leg-notrun { color: var(--ink-faint); }
 	.cov-table {
 		width: 100%;
 		max-width: 720px;
