@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import BeliefPrimitive from '$lib/components/BeliefPrimitive.svelte';
+	import HeuristicCoverage from '$lib/components/HeuristicCoverage.svelte';
 	import Validity from '$lib/components/Validity.svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -11,6 +12,15 @@
 	const findings = $derived(data.findings);
 	const residuals = $derived(data.residuals);
 	const narratives = $derived(data.narratives);
+	const coverage = $derived(data.coverage);
+	const datasets = $derived(data.datasets);
+
+	function fmtBytes(n: number): string {
+		if (n < 1024) return `${n} B`;
+		if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+		if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+		return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+	}
 
 	function statusGlyph(status: string): string {
 		if (status === 'succeeded') return '✓';
@@ -24,11 +34,11 @@
 	}
 
 	const FINDING_LANES: Array<{ key: keyof NonNullable<typeof findings>; title: string; emptyMsg: string }> = [
-		{ key: 'biggest_disagreement', title: 'biggest |Δ| vs INDRA', emptyMsg: 'no scored statements' },
-		{ key: 'probe_split', title: 'probe split (axes disagree)', emptyMsg: 'no multi-probe statements' },
-		{ key: 'low_confidence_high_stakes', title: 'low-confidence · n_ev ≥ 3', emptyMsg: 'no mid-range statements with multi-evidence' },
-		{ key: 'verdict_regression', title: 'verdict regressions vs prev run', emptyMsg: 'no prev run or no regressions' },
-		{ key: 'verdict_recovery', title: 'verdict recoveries vs prev run', emptyMsg: 'no prev run or no recoveries' }
+		{ key: 'biggest_disagreement', title: 'we disagree most with INDRA on these', emptyMsg: 'no scored statements' },
+		{ key: 'probe_split', title: 'the four probes disagreed among themselves', emptyMsg: 'no multi-probe statements' },
+		{ key: 'low_confidence_high_stakes', title: 'mid-range belief, multi-evidence — worth a closer look', emptyMsg: 'no mid-range statements with multi-evidence' },
+		{ key: 'verdict_regression', title: 'verdict moved correct → incorrect since prev run', emptyMsg: 'no prev run or no regressions' },
+		{ key: 'verdict_recovery', title: 'verdict moved incorrect → correct since prev run', emptyMsg: 'no prev run or no recoveries' }
 	];
 
 	function fmt(n: number): string {
@@ -157,6 +167,10 @@ con.close()`;
 			</p>
 		</section>
 	{:else}
+		<p class="dashboard-subtitle">
+			INDRA Statement belief rescorer. Below: the statement that disagreed most with INDRA's prior in the latest run, what changed, and where we are weakest.
+		</p>
+
 		<section class="focus">
 			{#if focus}
 				<BeliefPrimitive
@@ -180,8 +194,7 @@ con.close()`;
 
 		{#if findings}
 			{@const focusHash = focus?.stmt.stmt_hash ?? null}
-			<section class="findings">
-				<h2 class="findings-h">look here</h2>
+			<section class="findings" aria-label="other notable statements from this run">
 				{#each FINDING_LANES as lane}
 					{@const allRows = (findings[lane.key] as import('$lib/db').FindingRow[]) ?? []}
 					{@const rows = allRows.filter((r) => r.stmt_hash !== focusHash)}
@@ -209,6 +222,10 @@ con.close()`;
 
 		{#if o.latestValidity}
 			<Validity v={o.latestValidity} residuals={residuals} />
+		{/if}
+
+		{#if coverage}
+			<HeuristicCoverage {coverage} />
 		{/if}
 
 		<section class="grid">
@@ -285,6 +302,87 @@ con.close()`;
 
 			<!-- validity moved out of grid; rendered by Validity component above -->
 		</section>
+
+		{#if datasets && datasets.length > 0}
+			{@const corpora = datasets.filter((d) => d.kind === 'corpus')}
+			{@const benchmarks = datasets.filter((d) => d.kind === 'benchmark')}
+			<section class="datasets">
+				<h2 class="ds-h">datasets on disk</h2>
+				<p class="ds-intro">JSON / JSONL files in <code>data/corpora/</code> and <code>data/benchmark/</code>. Read-only for now — actions ship in U4 (register as truth_set) and U5 (ingest + score).</p>
+
+				<div class="ds-group">
+					<h3 class="ds-group-h">data/corpora/ <span class="muted">({corpora.length})</span></h3>
+					{#if corpora.length === 0}
+						<p class="ds-empty">no corpora yet — drop a JSON of INDRA statements in <code>data/corpora/</code> and refresh.</p>
+					{:else}
+						<ul class="ds-list">
+							{#each corpora as d}
+								<li class="ds-row">
+									<div class="ds-row-head">
+										<code class="ds-name">{d.filename}</code>
+										<span class="ds-meta">
+											<span>{fmtBytes(d.size_bytes)}</span>
+											<span class="muted">·</span>
+											<span>{d.shape.n_records ?? '—'} {d.shape.kind_detail === 'jsonl_records' ? 'records' : d.shape.kind_detail === 'indra_json' ? 'statements' : ''}</span>
+											{#if d.shape.source_apis.length > 0}
+												<span class="muted">·</span>
+												<span>sources: {d.shape.source_apis.join(', ')}</span>
+											{/if}
+										</span>
+									</div>
+									{#if d.shape.sample_lines.length > 0}
+										<ul class="ds-samples">
+											{#each d.shape.sample_lines as s}
+												<li><span class="ds-sample">{s}</span></li>
+											{/each}
+										</ul>
+									{/if}
+									{#if d.shape.notes.length > 0}
+										<p class="ds-notes">{d.shape.notes.join(' · ')}</p>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+
+				<div class="ds-group">
+					<h3 class="ds-group-h">data/benchmark/ <span class="muted">({benchmarks.length})</span></h3>
+					{#if benchmarks.length === 0}
+						<p class="ds-empty">no benchmark files found.</p>
+					{:else}
+						<ul class="ds-list">
+							{#each benchmarks as d}
+								<li class="ds-row">
+									<div class="ds-row-head">
+										<code class="ds-name">{d.filename}</code>
+										<span class="ds-meta">
+											<span>{fmtBytes(d.size_bytes)}</span>
+											<span class="muted">·</span>
+											<span>{d.shape.n_records ?? '—'} {d.shape.kind_detail === 'jsonl_records' ? 'records' : d.shape.kind_detail === 'indra_json' ? 'statements' : 'unparsed'}</span>
+											{#if d.shape.source_apis.length > 0}
+												<span class="muted">·</span>
+												<span>sources: {d.shape.source_apis.join(', ')}</span>
+											{/if}
+										</span>
+									</div>
+									{#if d.shape.sample_lines.length > 0}
+										<ul class="ds-samples">
+											{#each d.shape.sample_lines as s}
+												<li><span class="ds-sample">{s}</span></li>
+											{/each}
+										</ul>
+									{/if}
+									{#if d.shape.notes.length > 0}
+										<p class="ds-notes">{d.shape.notes.join(' · ')}</p>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</section>
+		{/if}
 
 		<footer class="data-footer">
 			<div class="df-line">
@@ -562,6 +660,15 @@ con.close()`;
 		cursor: help;
 	}
 
+	.dashboard-subtitle {
+		font-family: var(--serif);
+		font-size: 1rem;
+		color: var(--ink-muted);
+		margin: 0.3rem 0 1.6rem;
+		line-height: 1.5;
+		max-width: 60ch;
+	}
+
 	.focus {
 		margin-top: 0.5rem;
 		margin-bottom: 2.5rem;
@@ -569,16 +676,6 @@ con.close()`;
 
 	.findings {
 		margin: 0 0 2.5rem;
-	}
-
-	.findings-h {
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		color: var(--ink-muted);
-		text-transform: lowercase;
-		letter-spacing: 0.04em;
-		margin: 0 0 0.8rem;
-		font-weight: 500;
 	}
 
 	.lane {
@@ -623,6 +720,101 @@ con.close()`;
 	.focus-empty {
 		padding: 1.6rem;
 		border-left: 3px solid var(--rule);
+	}
+
+	.datasets {
+		margin: 0 0 2.5rem;
+	}
+	.ds-h {
+		font-family: var(--serif);
+		font-size: 1.15rem;
+		font-weight: 400;
+		color: var(--ink);
+		margin: 0 0 0.4rem;
+	}
+	.ds-intro {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.88rem;
+		color: var(--ink-muted);
+		margin: 0 0 1rem;
+		line-height: 1.5;
+	}
+	.ds-group {
+		margin-bottom: 1.4rem;
+	}
+	.ds-group-h {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		color: var(--ink-muted);
+		text-transform: lowercase;
+		letter-spacing: 0.04em;
+		font-weight: 500;
+		margin: 0 0 0.4rem;
+		border-bottom: 1px dotted var(--rule);
+		padding-bottom: 0.2rem;
+	}
+	.ds-empty {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.86rem;
+		color: var(--ink-faint);
+		margin: 0;
+	}
+	.ds-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+	.ds-row {
+		padding: 0.5rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.ds-row:last-child {
+		border-bottom: none;
+	}
+	.ds-row-head {
+		display: flex;
+		gap: 0.8rem;
+		align-items: baseline;
+		flex-wrap: wrap;
+		font-family: var(--mono);
+		font-size: 0.82rem;
+	}
+	.ds-name {
+		color: var(--ink);
+		font-weight: 500;
+	}
+	.ds-meta {
+		font-size: 0.74rem;
+		color: var(--ink-muted);
+		display: inline-flex;
+		gap: 0.4rem;
+		align-items: baseline;
+		flex-wrap: wrap;
+	}
+	.ds-samples {
+		list-style: none;
+		padding: 0;
+		margin: 0.3rem 0 0 1rem;
+		border-left: 2px solid var(--rule);
+	}
+	.ds-samples li {
+		padding: 0.15rem 0.6rem;
+	}
+	.ds-sample {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.88rem;
+		color: var(--ink);
+		line-height: 1.4;
+	}
+	.ds-notes {
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+		margin: 0.2rem 0 0;
+		font-style: italic;
 	}
 
 	.data-footer {

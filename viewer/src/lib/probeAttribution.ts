@@ -29,6 +29,8 @@ export interface ProbeAttribution {
 	confidence: ProbeConfidence;
 	source: ProbeSource;
 	rationale: string | null;
+	/** Evidence the probe ran on, when aggregating from per-evidence outputs. */
+	evidence_hash: string | null;
 	/** Signed magnitude in roughly [-1, +1]. Positive = pushes toward correct. */
 	contribution: number;
 	/** [0, 1]; `abs(contribution) / max(abs(contribution))` across the probe set. */
@@ -121,6 +123,7 @@ export function computeAttributions(probes: ProbeOutput[]): ProbeAttribution[] {
 			confidence: p.confidence,
 			source: p.source,
 			rationale: p.rationale,
+			evidence_hash: p.evidence_hash,
 			contribution,
 			normalized_width: maxAbs > 0 ? Math.abs(contribution) / maxAbs : 0,
 			decisive

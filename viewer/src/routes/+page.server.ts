@@ -2,10 +2,13 @@ import {
 	getCorpusOverview,
 	getFindings,
 	getFocusStatement,
+	getHeuristicCoverage,
 	getResidualDistribution,
 	getRunNarrative,
+	type HeuristicCoverage,
 	type RunNarrative
 } from '$lib/db';
+import { datasetShape, getDatasets, type DatasetDescriptor, type DatasetShape } from '$lib/datasets';
 import type { PageServerLoad } from './$types';
 
 const STMT_HASH_RE = /^[a-f0-9]{16}$/i;
@@ -31,5 +34,16 @@ export const load: PageServerLoad = async ({ url }) => {
 		if (n) narratives[rid] = n;
 	}
 
-	return { overview, focus, findings, residuals, narratives };
+	let coverage: HeuristicCoverage | null = null;
+	if (overview.latestValidity?.run_id) {
+		coverage = await getHeuristicCoverage(overview.latestValidity.run_id);
+	}
+
+	// U2: filesystem-discovered datasets + lazy shape preview.
+	const datasets: Array<DatasetDescriptor & { shape: DatasetShape }> = getDatasets().map((d) => ({
+		...d,
+		shape: datasetShape(d)
+	}));
+
+	return { overview, focus, findings, residuals, narratives, coverage, datasets };
 };

@@ -103,3 +103,46 @@ export function beliefSemantic(b: number | null | undefined): 'high' | 'low' | '
 	if (b <= 0.3) return 'low';
 	return 'mid';
 }
+
+/**
+ * Pull a quoted cue from a probe rationale, e.g. `... 'was not' ...` → "was not".
+ * Used to highlight the cue inside the corresponding evidence sentence so that
+ * cause and effect sit visibly together.
+ */
+export function extractProbeCue(rationale: string | null | undefined): string | null {
+	if (!rationale) return null;
+	const m = rationale.match(/['"]([^'"\n]{2,40})['"]/);
+	return m ? m[1] : null;
+}
+
+/**
+ * Split an evidence sentence into pre/cue/post parts for inline highlighting.
+ * When no cue or no match, returns one plain part.
+ */
+export function evidenceParts(
+	text: string | null,
+	cue: string | null
+): Array<{ text: string; highlight: boolean }> {
+	if (!text) return [{ text: '(no text)', highlight: false }];
+	if (!cue) return [{ text, highlight: false }];
+	const lower = text.toLowerCase();
+	const i = lower.indexOf(cue.toLowerCase());
+	if (i < 0) return [{ text, highlight: false }];
+	return [
+		{ text: text.slice(0, i), highlight: false },
+		{ text: text.slice(i, i + cue.length), highlight: true },
+		{ text: text.slice(i + cue.length), highlight: false }
+	];
+}
+
+/**
+ * Translate verdict enum to reader-facing language.
+ * The stored values name the scorer's *internal* state ("correct" / "incorrect");
+ * what the reader needs is the *claim's* status — supported, contradicted, or abstained.
+ */
+export function verdictDisplay(v: string | null | undefined): string {
+	if (v === 'correct') return 'supported';
+	if (v === 'incorrect') return 'contradicted';
+	if (v === 'abstain') return 'abstained';
+	return v ?? '—';
+}

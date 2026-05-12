@@ -1,8 +1,15 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import type { TruthLabelRow } from '$lib/db';
+	import type { ScorerStepRow, TruthLabelRow } from '$lib/db';
 	import BeliefPrimitive from '$lib/components/BeliefPrimitive.svelte';
-	import { shortHash, fmtBelief, pluralS } from '$lib/format';
+	import {
+		evidenceParts,
+		extractProbeCue,
+		fmtBelief,
+		pluralS,
+		shortHash,
+		verdictDisplay
+	} from '$lib/format';
 
 	let { data }: { data: PageData } = $props();
 	const d = $derived(data.detail);
@@ -82,6 +89,7 @@
 	let hoveredEvidenceHash: string | null = $state(null);
 	let expandedEvHash: string | null = $state(null);
 	let copiedHash: string | null = $state(null);
+	let expandedCall: string | null = $state(null);
 
 	function toggleExpand(h: string) {
 		expandedEvHash = expandedEvHash === h ? null : h;
@@ -103,6 +111,169 @@
 		const sign = d >= 0 ? '+' : '−';
 		return `${sign}${Math.abs(d).toFixed(2)}`;
 	}
+
+	function safeParseJSON(s: string | null): Record<string, unknown> | null {
+		if (!s) return null;
+		try {
+			return JSON.parse(s);
+		} catch {
+			return null;
+		}
+	}
+
+	function firstStepOutput(kind: string, evidenceHash?: string | null): Record<string, unknown> | null {
+		for (const s of d.scorer_steps) {
+			if (s.step_kind !== kind) continue;
+			if (evidenceHash !== undefined && s.evidence_hash !== evidenceHash) continue;
+			const o = safeParseJSON(s.output_json);
+			if (o) return o;
+		}
+		return null;
+	}
+
+	function probeOutputsForEvidence(evidenceHash: string): Array<{ kind: string; out: Record<string, unknown>; step: ScorerStepRow }> {
+		const probeKinds = ['subject_role_probe', 'object_role_probe', 'relation_axis_probe', 'scope_probe'];
+		const rows = d.scorer_steps.filter((s) => probeKinds.includes(s.step_kind) && s.evidence_hash === evidenceHash);
+		return rows
+			.map((step) => {
+				const out = safeParseJSON(step.output_json);
+				return out ? { kind: step.step_kind, out, step } : null;
+			})
+			.filter((x): x is { kind: string; out: Record<string, unknown>; step: ScorerStepRow } => x !== null);
+	}
+
+	function cueForEvidence(evidenceHash: string): string | null {
+		const probes = probeOutputsForEvidence(evidenceHash);
+		for (const { out } of probes) {
+			const c = extractProbeCue((out.rationale as string | null) ?? null);
+			if (c) return c;
+		}
+		return null;
+	}
+
+	const probeStepLabels: Record<string, string> = {
+		subject_role_probe: 'subj-role',
+		object_role_probe: 'obj-role',
+		relation_axis_probe: 'relation-axis',
+		scope_probe: 'scope'
+	};
+
+	/**
+	 * Trace narrative for the whole statement. Returns an ordered list of
+	 * sentence lines explaining the journey the pipeline took. Unrun steps
+	 * collapse into a single explanatory line instead of N missing dots.
+	 */
+	const traceLines = $derived.by(() => {
+		const lines: Array<{ key: string; prose: string; muted?: boolean }> = [];
+
+		const pc = firstStepOutput('parse_claim');
+		if (pc) {
+			const stype = pc.stmt_type ?? d.indra_type;
+			const agentList = d.agents.map((a) => a.name).join(' / ');
+			lines.push({
+				key: 'parse_claim',
+				prose: `Parsed the claim as ${stype}${agentList ? ` (${agentList})` : ''}.`
+			});
+		}
+
+		const bc = firstStepOutput('build_context');
+		if (bc) {
+			const aliasN = (bc.n_aliases as number | undefined) ?? 0;
+			const relN = (bc.n_detected_relations as number | undefined) ?? 0;
+			lines.push({
+				key: 'build_context',
+				prose: `Built context: ${aliasN} alias${aliasN === 1 ? '' : 'es'}, ${relN} relation${relN === 1 ? '' : 's'} detected.`
+			});
+		}
+
+		const sr = d.scorer_steps.find((s) => s.step_kind === 'substrate_route');
+		if (sr) {
+			lines.push({
+				key: 'substrate_route',
+				prose: 'Routed to the deterministic substrate layer (regex / Gilda) before any LLM probe.'
+			});
+		}
+
+		const probeOrder = ['subject_role_probe', 'object_role_probe', 'relation_axis_probe', 'scope_probe'];
+		const ranProbeKinds: string[] = [];
+		const skippedProbeKinds: string[] = [];
+		for (const kind of probeOrder) {
+			const out = firstStepOutput(kind);
+			if (out && (out.answer ?? null) !== null && out.answer !== 'abstain') {
+				ranProbeKinds.push(kind);
+				const source = out.source ?? '?';
+				const conf = out.confidence ?? '?';
+				const cue = extractProbeCue((out.rationale as string | null) ?? null);
+				const cueText = cue ? ` (cue: “${cue}”)` : '';
+				lines.push({
+					key: kind,
+					prose: `${probeStepLabels[kind]}: ${out.answer} — ${source}, ${conf} confidence${cueText}.`
+				});
+			} else {
+				skippedProbeKinds.push(probeStepLabels[kind]);
+			}
+		}
+		if (skippedProbeKinds.length > 0 && ranProbeKinds.length > 0) {
+			lines.push({
+				key: 'probes_skipped',
+				muted: true,
+				prose: `${skippedProbeKinds.join(', ')} did not fire — substrate's earlier finding short-circuited the chain.`
+			});
+		} else if (skippedProbeKinds.length > 0 && ranProbeKinds.length === 0) {
+			lines.push({
+				key: 'probes_all_skipped',
+				muted: true,
+				prose: `No probes fired in this run.`
+			});
+		}
+
+		const gr = firstStepOutput('grounding');
+		if (gr) {
+			lines.push({
+				key: 'grounding',
+				prose: `Checked entity grounding.`
+			});
+		}
+
+		const agg = firstStepOutput('aggregate');
+		if (agg) {
+			const verdict = (agg.verdict as string | null) ?? '?';
+			const conf = (agg.confidence as string | null) ?? '?';
+			const score = agg.score as number | null;
+			const scoreText = typeof score === 'number' ? score.toFixed(2) : '—';
+			lines.push({
+				key: 'aggregate',
+				prose: `Aggregated to verdict: ${verdictDisplay(verdict)} (${conf} confidence, score ${scoreText}).`
+			});
+		}
+
+		return lines;
+	});
+
+	/** epistemics flag → reader-facing phrase */
+	function epistemicsLine(e: { is_direct: boolean | null; is_negated: boolean | null; is_curated: boolean | null }): string {
+		const parts: string[] = [];
+		if (e.is_direct === false) parts.push('indirect citation');
+		else if (e.is_direct === true) parts.push('direct citation');
+		if (e.is_negated === true) parts.push('explicitly negated');
+		else if (e.is_negated === false) parts.push('not negated');
+		if (e.is_curated === true) parts.push('human-curated');
+		else if (e.is_curated === false) parts.push('not human-curated');
+		return parts.length === 0 ? 'no epistemic flags set' : parts.join(' · ');
+	}
+
+	/** Reader-friendly description for the truth-set IDs we ship. */
+	function truthSetDescription(tid: string): string {
+		const known: Record<string, string> = {
+			indra_published_belief: "INDRA's published belief score for the statement (prior)",
+			indra_grounding: 'entity grounding mappings from INDRA (db_refs)',
+			indra_epistemics: "INDRA's epistemic flags on the evidence (direct / negated / curated)",
+			demo_gold: 'hand-labeled gold examples used for P/R/F1'
+		};
+		return known[tid] ?? tid;
+	}
+
+	let showDebug: boolean = $state(false);
 </script>
 
 <svelte:head><title>{d.indra_type} · {shortHash(d.stmt_hash)} · INDRA Belief</title></svelte:head>
@@ -153,54 +324,35 @@
 	<div class="cols">
 		<!-- Center column: scorer trace + evidences -->
 		<div class="trace">
-			<h2>scorer trace
-				{#if scoredEvidences.length > 0}
-					<span class="counter">· {scoredEvidences.length} aggregate step{scoredEvidences.length === 1 ? '' : 's'}</span>
-				{:else}
-					<span class="counter">· not run</span>
-				{/if}
-			</h2>
-			<!-- 9-step rail: horizontal tick axis. One tick lit per kind that
-			     has rows. Brutalist iter-2: vertical list of muted labels read
-			     as a TODO; tick axis is honest about what's wired and legible
-			     proportional to the work that exists. -->
-			<div class="rail-axis" aria-label="9-step scorer trace">
-				<div class="rail-track">
-					{#each STEP_KINDS as [kind, label], i}
-						{@const stepRows = d.scorer_steps.filter((s) => s.step_kind === kind)}
-						{@const aggForAdjudicate = kind === 'adjudicate' && scoredEvidences.length > 0}
-						{@const lit = stepRows.length > 0 || aggForAdjudicate}
-						<div class="rail-cell" class:lit title="{i + 1}. {label}{lit ? (aggForAdjudicate ? ` — via aggregate ×${scoredEvidences.length}` : ` — ${stepRows.length}×`) : ' — not run'}">
-							<span class="rail-tick" aria-hidden="true">{lit ? '●' : '·'}</span>
-							<span class="rail-cell-label">{label}</span>
-						</div>
-					{/each}
-				</div>
-				{#if scoredEvidences.length > 0}
-					{@const litLabels = STEP_KINDS
-						.filter(([k]) => d.scorer_steps.some((s) => s.step_kind === k))
-						.map(([_, lab]) => lab)}
-					{@const adjLitViaAgg = !litLabels.includes('adjudicate')}
-					{@const totalLit = litLabels.length + (adjLitViaAgg ? 1 : 0)}
-					<p class="rail-note">
-						<span class="muted">{totalLit}/9 lit · </span>
-						{litLabels.join(', ')}{adjLitViaAgg ? ', adjudicate (via aggregate)' : ''}.
-					</p>
-				{:else}
-					<p class="rail-note hint">No run yet · ticks light when <code>score_corpus</code> writes scorer_step rows.</p>
-				{/if}
-			</div>
-			{#if scoredEvidences.length === 0}
+			<h2>how the pipeline scored this</h2>
+			{#if traceLines.length === 0}
 				<p class="hint">
-					Per-step rail lights up when <code>score_corpus(con, [stmt], decompose=True)</code> writes per-step rows.
+					Not yet scored — invoke <code>score_corpus(con, [stmt], decompose=True)</code> to see the pipeline trace.
 				</p>
+			{:else}
+				<ol class="trace-narrative">
+					{#each traceLines as line, i}
+						<li class="trace-line" class:trace-muted={line.muted}>
+							<span class="trace-num">{i + 1}</span>
+							<span class="trace-prose">{line.prose}</span>
+						</li>
+					{/each}
+				</ol>
 			{/if}
 
 			<h2>evidences <span class="counter">{d.evidences.length}</span></h2>
+			<p class="ev-section-note">
+				Each evidence carries a verdict ∈ {'{'}supported, contradicted, abstained{'}'} and a confidence ∈ {'{'}high, medium, low{'}'}. The displayed score is a lookup from that (verdict, confidence) pair — only 7 distinct values are possible:
+				<span class="ev-bucket-table" title="src/indra_belief/scorers/commitments.py::_VERDICT_SCORE">
+					correct/high <code>0.95</code> · correct/medium <code>0.80</code> · correct/low <code>0.65</code> · abstain/* <code>0.50</code> · incorrect/low <code>0.35</code> · incorrect/medium <code>0.20</code> · incorrect/high <code>0.05</code>
+				</span>
+			</p>
 			{#each d.evidences as e}
 				{@const evTruth = truthByTarget(d.truth_labels, 'evidence', e.evidence_hash)}
 				{@const score = d.scorer_steps.find((s) => s.evidence_hash === e.evidence_hash && s.step_kind === 'aggregate')}
 				{@const out = score ? JSON.parse(score.output_json) : null}
+				{@const cue = cueForEvidence(e.evidence_hash)}
+				{@const parts = evidenceParts(e.text, cue)}
 				<!-- D10 Bret Victor lever: hovering an evidence card highlights truth-set rows
 				     that judge any of its labels (epistemics on this evidence) -->
 				{@const isExpanded = expandedEvHash === e.evidence_hash}
@@ -224,30 +376,31 @@
 							toggleExpand(e.evidence_hash);
 						}
 					}}>
-					<div class="ev-meta">
-						<code class="ev-hash">{shortHash(e.evidence_hash)}</code>
-						<span class="ev-source">{e.source_api ?? '—'}</span>
+					{#if out}
+						<div class="ev-verdict-line">
+							<span class="ev-verdict ev-verdict-{out.verdict}">verdict: {verdictDisplay(out.verdict)}</span>
+							<span class="ev-confidence">{out.confidence ?? '—'} confidence</span>
+							<span class="ev-score">score <span class="ev-score-num">{out.score?.toFixed?.(2) ?? '—'}</span></span>
+							{#if score}
+								<span class="ev-chevron" aria-hidden="true">{isExpanded ? '▾ collapse' : '▸ expand'}</span>
+							{/if}
+						</div>
+					{/if}
+					<div class="ev-meta-secondary">
+						<span class="ev-source">[{e.source_api ?? 'no source'}]</span>
 						{#if e.pmid}
 							<span class="ev-pmid">pmid:{e.pmid}</span>
 						{/if}
-						{#if out}
-							<span class="verdict-stamp verdict-{out.verdict}">{out.verdict} / {out.confidence}</span>
-							<span class="score-stamp">score {out.score?.toFixed?.(2) ?? '—'}</span>
-							{#if score?.latency_ms != null && score.latency_ms > 0}
-								<span class="latency">{score.latency_ms}ms</span>
-							{/if}
-						{/if}
-						{#if score}
-							<span class="ev-chevron" aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+						<code class="ev-hash" title={e.evidence_hash}>{shortHash(e.evidence_hash)}</code>
+						{#if score?.latency_ms != null && score.latency_ms > 0}
+							<span class="latency">{score.latency_ms}ms</span>
 						{/if}
 					</div>
-					<p class="ev-text">{e.text ?? ''}</p>
+					<p class="ev-text">{#each parts as part}{#if part.highlight}<mark class="ev-text-cue">{part.text}</mark>{:else}{part.text}{/if}{/each}</p>
 					<div class="ev-flags">
-						<span class="flag">direct: <span class="flag-val">{epistemicsRow('direct', e.is_direct)}</span></span>
-						<span class="flag">negated: <span class="flag-val">{epistemicsRow('negated', e.is_negated)}</span></span>
-						<span class="flag">curated: <span class="flag-val">{epistemicsRow('curated', e.is_curated)}</span></span>
+						<span class="ev-flags-prose">{epistemicsLine(e)}</span>
 						{#if evTruth.length > 0}
-							<span class="truth-stamp">{evTruth.length} truth label{pluralS(evTruth.length)}</span>
+							<span class="truth-stamp">· {evTruth.length} truth label{pluralS(evTruth.length)}</span>
 						{/if}
 					</div>
 					{#if out && out.reasons && out.reasons.length > 0}
@@ -259,104 +412,203 @@
 						</div>
 					{/if}
 					{#if isExpanded && out}
+						{@const callLog = (out.call_log as Array<Record<string, unknown>> | undefined) ?? []}
+						{@const evSteps = d.scorer_steps.filter((s) => s.evidence_hash === e.evidence_hash && s.step_kind !== 'aggregate')}
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="ev-expanded"
-							onclick={(ev) => ev.stopPropagation()}>
+						<div class="ev-expanded" onclick={(ev) => ev.stopPropagation()}>
+
+							<!-- Aggregate rationale (the scorer's prose summary for this evidence) -->
 							{#if out.rationale}
-								<div class="exp-row">
-									<span class="exp-label">rationale</span>
-									<span class="exp-val">{out.rationale}</span>
+								<div class="exp-block">
+									<h4 class="exp-h">rationale</h4>
+									<p class="exp-rationale">{out.rationale}</p>
 								</div>
 							{/if}
-							{#if out.call_log && out.call_log.length === 1}
-								{@const c = out.call_log[0]}
-								<div class="exp-row">
-									<span class="exp-label">call_log</span>
-									<span class="exp-val mono">
-										{c.kind ?? '—'} · {(c.duration_s ?? 0).toFixed(2)}s · {c.prompt_tokens ?? '—'}→{c.out_tokens ?? '—'} · {c.finish_reason ?? '—'}
-									</span>
-								</div>
-							{:else if out.call_log && out.call_log.length > 1}
-								<div class="exp-row">
-									<span class="exp-label">call_log</span>
-									<table class="call-log">
+
+							<!-- LLM calls: each row is one model invocation; click to expand. -->
+							<div class="exp-block">
+								<h4 class="exp-h">LLM calls <span class="exp-h-count">({callLog.length})</span>
+									<span class="exp-h-note">one row per call sent to the model during this aggregate step · click a row to see the prompt and the model's response</span>
+								</h4>
+								{#if callLog.length === 0}
+									<p class="exp-empty">no LLM calls — every probe was answered by the substrate layer (regex / Gilda)</p>
+								{:else}
+									<div class="call-list">
+										{#each callLog as call, ci}
+											{@const callKey = `${e.evidence_hash}-${ci}`}
+											{@const isCallOpen = expandedCall === callKey}
+											{@const hasContent = typeof call.content === 'string' && call.content.length > 0}
+											{@const hasReasoning = typeof call.reasoning === 'string' && call.reasoning.length > 0}
+											{@const hasMessages = Array.isArray(call.messages)}
+											{@const hasError = typeof call.error === 'string'}
+											<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+											<!-- svelte-ignore a11y_click_events_have_key_events -->
+											<div class="call-row" class:call-row-open={isCallOpen} class:call-row-error={hasError}
+												role="button"
+												tabindex="0"
+												onclick={(ev) => { ev.stopPropagation(); expandedCall = isCallOpen ? null : callKey; }}>
+												<span class="call-chev" aria-hidden="true">{isCallOpen ? '▾' : '▸'}</span>
+												<span class="call-kind">{(call.kind as string | undefined) ?? '—'}</span>
+												<span class="call-model muted">{(call.model_id as string | undefined) ?? ''}</span>
+												<span class="call-duration">{((call.duration_s as number | undefined) ?? 0).toFixed(2)}s</span>
+												<span class="call-tokens">{(call.prompt_tokens as number | null | undefined) ?? '—'}→{(call.out_tokens as number | null | undefined) ?? '—'}</span>
+												<span class="call-finish muted">{(call.finish_reason as string | null | undefined) ?? '—'}</span>
+												<span class="call-flags muted">
+													{#if hasReasoning}reasoning {(call.reasoning as string).length}c · {/if}{#if hasContent}content {(call.content as string).length}c{:else}<span class="exp-not-captured-inline">no content captured</span>{/if}
+												</span>
+											</div>
+											{#if isCallOpen}
+												<div class="call-detail">
+													{#if hasError}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">error</h5>
+															<pre class="call-detail-pre call-detail-error">{call.error}</pre>
+														</div>
+													{/if}
+													{#if (call.system as string | undefined)}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">system prompt</h5>
+															<pre class="call-detail-pre">{call.system}</pre>
+														</div>
+													{/if}
+													{#if hasMessages}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">messages ({(call.messages as unknown[]).length})</h5>
+															{#each (call.messages as Array<{role: string; content: string}>) as msg}
+																<div class="call-msg">
+																	<span class="call-msg-role">{msg.role}</span>
+																	<pre class="call-detail-pre call-detail-msg">{msg.content}</pre>
+																</div>
+															{/each}
+														</div>
+													{:else if !hasError}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">prompt</h5>
+															<p class="exp-not-captured">not captured — pre-Layer-B runs don't persist input messages. Re-score to capture.</p>
+														</div>
+													{/if}
+													{#if hasReasoning}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">reasoning <span class="muted">({(call.reasoning as string).length} chars)</span></h5>
+															<pre class="call-detail-pre call-detail-reasoning">{call.reasoning}</pre>
+														</div>
+													{/if}
+													{#if hasContent}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">response</h5>
+															<pre class="call-detail-pre call-detail-content">{call.content}</pre>
+														</div>
+													{:else if !hasError}
+														<div class="call-detail-block">
+															<h5 class="call-detail-h">response</h5>
+															<p class="exp-not-captured">not captured — pre-Layer-B runs don't persist response text. Re-score to capture.</p>
+														</div>
+													{/if}
+												</div>
+											{/if}
+										{/each}
+									</div>
+								{/if}
+							</div>
+
+							<!-- Per-step records: one row per scorer_step DB row for this evidence -->
+							{#if evSteps.length > 0}
+								<div class="exp-block">
+									<h4 class="exp-h">pipeline steps <span class="exp-h-count">({evSteps.length})</span>
+										<span class="exp-h-note">one row per <code>scorer_step</code> persisted for this evidence (parse, probes, grounding, ...)</span>
+									</h4>
+									<table class="trace-table">
 										<thead>
-											<tr><th>kind</th><th class="num">duration</th><th class="num">in→out</th><th>finish</th></tr>
+											<tr>
+												<th>step</th>
+												<th>source</th>
+												<th>output</th>
+												<th class="num">in→out tok</th>
+												<th class="num">latency</th>
+											</tr>
 										</thead>
 										<tbody>
-											{#each out.call_log as call}
+											{#each evSteps as step}
+												{@const stepOut = safeParseJSON(step.output_json)}
+												{@const hasInputPayload = step.input_payload_json != null && step.input_payload_json !== 'null'}
 												<tr>
-													<td>{call.kind ?? '—'}</td>
-													<td class="num">{(call.duration_s ?? 0).toFixed(2)}s</td>
-													<td class="num">{call.prompt_tokens ?? '—'}→{call.out_tokens ?? '—'}</td>
-													<td>{call.finish_reason ?? '—'}</td>
+													<td>{step.step_kind}</td>
+													<td>
+														{#if step.is_substrate_answered === true}<span class="step-source-tag step-source-substrate">substrate</span>
+														{:else if step.is_substrate_answered === false}<span class="step-source-tag step-source-llm">LLM</span>
+														{:else}<span class="muted">—</span>{/if}
+													</td>
+													<td class="step-output">
+														{#if !stepOut}
+															<span class="muted">—</span>
+														{:else}
+															{#if stepOut.answer != null}<span class="step-answer">{stepOut.answer}</span>{/if}
+															{#if stepOut.confidence != null}<span class="muted">· {stepOut.confidence}</span>{/if}
+															{#if stepOut.rationale}<span class="step-rationale">— {stepOut.rationale}</span>{/if}
+															{#if stepOut.stmt_type != null}<span>{stepOut.stmt_type}</span>{/if}
+															{#if stepOut.n_aliases != null}<span class="muted">{stepOut.n_aliases} aliases, {stepOut.n_detected_relations ?? 0} relations</span>{/if}
+															{#if stepOut.span}<span class="step-span">“{stepOut.span}”</span>{/if}
+														{/if}
+													</td>
+													<td class="num">
+														{#if step.prompt_tokens != null || step.out_tokens != null}{step.prompt_tokens ?? '—'}→{step.out_tokens ?? '—'}
+														{:else}<span class="muted">—</span>{/if}
+													</td>
+													<td class="num">
+														{#if step.latency_ms != null && step.latency_ms > 0}{step.latency_ms}ms
+														{:else}<span class="muted">—</span>{/if}
+													</td>
 												</tr>
+												{#if showDebug}
+													<tr class="exp-debug-row">
+														<td colspan="5" class="exp-debug-cell">
+															<span class="exp-debug-label">step_hash</span>
+															<code>{step.step_hash}</code>
+															<span class="exp-debug-label">input_payload</span>
+															<span>{hasInputPayload ? 'present' : 'not captured'}</span>
+															<span class="exp-debug-label">model</span>
+															<span>{step.model_id ?? '—'}</span>
+															{#if step.error}<span class="exp-debug-label">error</span><span class="exp-error-inline">{step.error}</span>{/if}
+														</td>
+													</tr>
+												{/if}
 											{/each}
 										</tbody>
 									</table>
 								</div>
-							{:else}
-								<div class="exp-row">
-									<span class="exp-label muted">call_log empty (substrate-resolved or no LLM probes invoked)</span>
-								</div>
 							{/if}
+
 							{#if out.error}
-								<div class="exp-row exp-error">
-									<span class="exp-label">error</span>
-									<span class="exp-val">{out.error}</span>
+								<div class="exp-block exp-error-block">
+									<h4 class="exp-h">aggregate error</h4>
+									<p class="exp-error">{out.error}</p>
 								</div>
 							{/if}
-							{#if d.scorer_steps.filter((s) => s.evidence_hash === e.evidence_hash && s.step_kind !== 'aggregate').length > 0}
-								{@const evSteps = d.scorer_steps.filter((s) => s.evidence_hash === e.evidence_hash && s.step_kind !== 'aggregate')}
-								<div class="exp-row">
-									<span class="exp-label">per-step</span>
-									<div class="step-list">
-										{#each evSteps as step}
-											{@const stepOut = (() => { try { return JSON.parse(step.output_json); } catch { return null; }})()}
-											<div class="step-item">
-												<span class="step-kind">{step.step_kind}</span>
-												{#if step.is_substrate_answered === true}<span class="step-source">substrate</span>{/if}
-												{#if step.is_substrate_answered === false}<span class="step-source">LLM</span>{/if}
-												{#if stepOut}
-													{#if stepOut.answer != null}
-														<span class="step-answer">{stepOut.answer}</span>
-													{/if}
-													{#if stepOut.confidence != null}
-														<span class="muted">{stepOut.confidence}</span>
-													{/if}
-													{#if stepOut.span}
-														<span class="step-span">"{stepOut.span}"</span>
-													{/if}
-													{#if stepOut.stmt_type != null}
-														<span class="muted">{stepOut.stmt_type}</span>
-													{/if}
-													{#if stepOut.n_aliases != null}
-														<span class="muted">{stepOut.n_aliases} aliases</span>
-													{/if}
-													{#if stepOut.n_detected_relations != null}
-														<span class="muted">{stepOut.n_detected_relations} relations</span>
-													{/if}
-												{/if}
-											</div>
-										{/each}
+
+							<!-- Developer detail: hashes, model id, raw payload pointers -->
+							<div class="exp-block">
+								<label class="exp-debug-toggle">
+									<input type="checkbox" bind:checked={showDebug} onclick={(ev) => ev.stopPropagation()}/>
+									<span>show developer detail (step_hash, model_id, payload state)</span>
+								</label>
+								{#if showDebug}
+									<div class="exp-debug-block">
+										<span class="exp-debug-label">aggregate step_hash</span>
+										<button type="button" class="hash-copy"
+											onclick={(ev) => {
+												ev.stopPropagation();
+												navigator.clipboard?.writeText(score?.step_hash ?? '').then(() => {
+													copiedHash = score?.step_hash ?? null;
+													setTimeout(() => { copiedHash = null; }, 1200);
+												});
+											}}
+											title="Copy step_hash to clipboard">
+											<code>{score?.step_hash}</code>
+											<span class="copy-mark">{copiedHash === score?.step_hash ? '✓ copied' : '⎘'}</span>
+										</button>
 									</div>
-								</div>
-							{/if}
-							<div class="exp-row">
-								<span class="exp-label muted">step_hash</span>
-								<button type="button" class="hash-copy"
-									onclick={(ev) => {
-										ev.stopPropagation();
-										navigator.clipboard?.writeText(score?.step_hash ?? '').then(() => {
-											copiedHash = score?.step_hash ?? null;
-											setTimeout(() => { copiedHash = null; }, 1200);
-										});
-									}}
-									title="Copy step_hash to clipboard">
-									<code class="exp-val muted">{score?.step_hash}</code>
-									<span class="copy-mark">{copiedHash === score?.step_hash ? '✓ copied' : '⎘'}</span>
-								</button>
+								{/if}
 							</div>
 						</div>
 					{/if}
@@ -366,8 +618,8 @@
 
 		<!-- Right column: truth panel + agents + supports -->
 		<aside class="truth-panel">
-			<h2>truth_sets</h2>
-			<dl class="truth-list">
+			<h2>what other systems say about this</h2>
+			<ul class="truth-list">
 				{#each presentSets as tsetId}
 					{@const labels = d.truth_labels.filter((l) => l.truth_set_id === tsetId)}
 					{@const isActive = hoveredEvidenceHash != null && labels.some((l) =>
@@ -376,25 +628,24 @@
 						l.target_kind === 'agent'
 					)}
 					{@const isPassive = hoveredEvidenceHash != null && !isActive}
-					<div class="truth-row" class:truth-active={isActive} class:truth-passive={isPassive}>
-						<dt>{tsetId}</dt>
-						<dd>
-							<span class="truth-count">{labels.length}</span>
-							<span class="muted">label{labels.length === 1 ? '' : 's'}</span>
-						</dd>
-					</div>
+					<li class="truth-row" class:truth-active={isActive} class:truth-passive={isPassive}>
+						<div class="truth-row-head">
+							<span class="truth-name"><code>{tsetId}</code></span>
+							<span class="truth-count">{labels.length} label{labels.length === 1 ? '' : 's'}</span>
+						</div>
+						<p class="truth-desc">{truthSetDescription(tsetId)}</p>
+					</li>
 				{/each}
 				{#if absentSets.length > 0}
-					<div class="truth-row absent rollup" title={absentSets.join(', ')}>
-						<dt>absent</dt>
-						<dd>
-							<span class="truth-count">{absentSets.length}</span>
-							<span class="muted">truth_set{absentSets.length === 1 ? '' : 's'}:</span>
-							<span class="absent-mark">{absentSets.map(shortTruthLabel).join(' · ')}</span>
-						</dd>
-					</div>
+					<li class="truth-row truth-row-absent" title={absentSets.join(', ')}>
+						<div class="truth-row-head">
+							<span class="truth-name muted">no labels yet from</span>
+							<span class="truth-count muted">{absentSets.length} set{absentSets.length === 1 ? '' : 's'}</span>
+						</div>
+						<p class="truth-desc muted">{absentSets.map(shortTruthLabel).join(' · ')}</p>
+					</li>
 				{/if}
-			</dl>
+			</ul>
 
 			<h2>agents <span class="counter">{d.agents.length}</span></h2>
 			{#each d.agents as a}
@@ -540,63 +791,6 @@
 	.vt-incorrect { color: var(--accent); }
 	.vt-abstain { color: var(--ink-muted); font-style: italic; }
 
-	/* 9-step rail — horizontal tick axis */
-	.rail-axis {
-		margin: 0 0 1.2rem;
-	}
-
-	.rail-track {
-		display: grid;
-		grid-template-columns: repeat(9, 1fr);
-		border-bottom: 1px solid var(--rule);
-		padding-bottom: 0.3rem;
-	}
-
-	.rail-cell {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.15rem;
-		font-family: var(--mono);
-		font-size: 0.66rem;
-		color: var(--ink-faint);
-		cursor: help;
-	}
-
-	.rail-tick {
-		font-size: 0.9rem;
-		line-height: 1;
-		color: var(--ink-faint);
-	}
-
-	.rail-cell.lit .rail-tick {
-		color: var(--accent);
-	}
-
-	.rail-cell.lit .rail-cell-label {
-		color: var(--ink);
-	}
-
-	.rail-cell-label {
-		text-align: center;
-		font-size: 0.62rem;
-		letter-spacing: 0.01em;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		max-width: 12ch;
-	}
-
-	.rail-note {
-		font-family: var(--serif);
-		font-size: 0.84rem;
-		color: var(--ink-muted);
-		margin: 0.4rem 0 0;
-	}
-
-	.rail-note.hint {
-		font-style: italic;
-	}
 
 	.hint {
 		color: var(--ink-faint);
@@ -635,22 +829,6 @@
 		font-weight: 400;
 	}
 
-	.trace-placeholder {
-		font-family: var(--mono);
-		font-size: 0.82rem;
-		padding: 0.4rem 0 0 0.6rem;
-		border-left: 2px solid var(--rule);
-	}
-
-	.rail {
-		padding: 0.15rem 0;
-	}
-
-	.step-num {
-		display: inline-block;
-		width: 3ch;
-		color: var(--ink-faint);
-	}
 
 	.evidence {
 		padding: 0.7rem 0;
@@ -661,69 +839,138 @@
 		border-bottom: none;
 	}
 
-	.ev-meta {
+	/* Trace narrative — sentence-flow replacement of the old 9-dot rail */
+	.trace-narrative {
+		list-style: none;
+		counter-reset: trace;
+		padding: 0;
+		margin: 0 0 1.6rem;
+	}
+	.trace-line {
+		display: grid;
+		grid-template-columns: 1.6rem 1fr;
+		gap: 0.5rem;
+		align-items: baseline;
+		padding: 0.3rem 0;
+		font-family: var(--serif);
+		font-size: 0.98rem;
+		line-height: 1.45;
+	}
+	.trace-num {
 		font-family: var(--mono);
 		font-size: 0.74rem;
-		color: var(--ink-muted);
+		color: var(--ink-faint);
+		text-align: right;
+	}
+	.trace-prose {
+		color: var(--ink);
+	}
+	.trace-line.trace-muted .trace-prose {
+		color: var(--ink-faint);
+		font-style: italic;
+	}
+
+	/* Verdict line — top of each evidence card */
+	.ev-verdict-line {
 		display: flex;
 		gap: 0.8rem;
-		margin-bottom: 0.3rem;
+		align-items: baseline;
+		flex-wrap: wrap;
+		font-family: var(--mono);
+		font-size: 0.92rem;
+		margin: 0.4rem 0 0.2rem;
 	}
-
-	.ev-hash {
+	.ev-verdict {
+		font-weight: 500;
+	}
+	.ev-verdict-correct { color: var(--ok-green); }
+	.ev-verdict-incorrect { color: var(--accent); }
+	.ev-verdict-abstain { color: var(--ink-muted); font-style: italic; }
+	.ev-confidence { color: var(--ink); }
+	.ev-score { color: var(--ink); }
+	.ev-score-num {
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+	}
+	.ev-chevron {
+		margin-left: auto;
 		color: var(--ink-faint);
+		font-family: var(--mono);
+		font-size: 0.72rem;
 	}
-
-	.ev-source {
+	.ev-clickable:hover .ev-chevron {
+		color: var(--accent);
+	}
+	.evidence.ev-expanded-state .ev-chevron {
 		color: var(--accent);
 	}
 
-	.ev-pmid {
-		color: var(--ink-muted);
+	.ev-meta-secondary {
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+		display: flex;
+		gap: 0.8rem;
+		margin-bottom: 0.5rem;
 	}
+	.ev-source { color: var(--accent); }
+	.ev-pmid { color: var(--ink-muted); }
+	.ev-hash { color: var(--ink-faint); }
+	.latency { color: var(--ink-faint); }
 
 	.ev-text {
 		font-family: var(--serif);
-		font-size: 1.02rem;
+		font-size: 1.04rem;
 		line-height: 1.5;
 		margin: 0.2rem 0 0.4rem;
 		color: var(--ink);
 	}
+	.ev-text-cue {
+		background: var(--accent-wash);
+		color: var(--accent);
+		padding: 0 0.15em;
+		font-style: italic;
+		font-weight: 500;
+		border-bottom: 1px solid var(--accent);
+	}
 
 	.ev-flags {
-		font-family: var(--mono);
-		font-size: 0.74rem;
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.86rem;
 		color: var(--ink-muted);
-		display: flex;
-		gap: 1rem;
+		margin: 0.2rem 0;
 	}
+	.ev-flags-prose { color: var(--ink-muted); }
 
-	.flag-val {
+	.ev-section-note {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.84rem;
+		color: var(--ink-muted);
+		margin: 0 0 1rem;
+		line-height: 1.5;
+		max-width: 65ch;
+	}
+	.ev-bucket-table {
+		display: block;
+		font-family: var(--mono);
+		font-style: normal;
+		font-size: 0.74rem;
+		color: var(--ink-faint);
+		margin-top: 0.3rem;
+		line-height: 1.6;
+	}
+	.ev-bucket-table code {
 		color: var(--ink);
+		font-variant-numeric: tabular-nums;
 	}
-
 	.truth-stamp {
 		color: var(--accent);
-	}
-
-	.verdict-stamp {
 		font-family: var(--mono);
-		font-size: 0.72rem;
-		text-transform: lowercase;
-		padding: 0 0.3rem;
-	}
-
-	.verdict-correct { color: #2a6f2a; }
-	.verdict-incorrect { color: #7d2a1a; }
-	.verdict-abstain { color: var(--ink-muted); font-style: italic; }
-
-	.score-stamp {
-		font-variant-numeric: tabular-nums;
-		color: var(--ink);
-	}
-
-	.latency {
-		color: var(--ink-faint);
+		font-style: normal;
+		font-size: 0.74rem;
+		margin-left: 0.4rem;
 	}
 
 	.reasons {
@@ -761,42 +1008,52 @@
 		border-bottom: 1px dotted var(--rule);
 	}
 
-	.truth-row dt {
-		color: var(--ink);
-		margin: 0;
+	.truth-row {
+		display: block;
+		padding: 0.5rem 0;
+		border-bottom: 1px dotted var(--rule);
 	}
-
-	.truth-row dd {
+	.truth-row:last-child {
+		border-bottom: none;
+	}
+	.truth-row-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 0.6rem;
+		font-family: var(--mono);
+		font-size: 0.82rem;
+	}
+	.truth-name {
 		color: var(--ink);
-		margin: 0;
+	}
+	.truth-count {
+		color: var(--ink);
 		font-variant-numeric: tabular-nums;
+		font-size: 0.76rem;
 	}
-
-	.truth-row.absent dt {
+	.truth-desc {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.86rem;
+		color: var(--ink-muted);
+		margin: 0.2rem 0 0;
+		line-height: 1.4;
+	}
+	.truth-row-absent .truth-name,
+	.truth-row-absent .truth-count {
 		color: var(--ink-faint);
 	}
-
-	.truth-row.absent dd {
-		color: var(--ink-faint);
-	}
-
-	.truth-row.truth-active dt {
+	.truth-row.truth-active .truth-name {
 		color: var(--accent);
 		font-weight: 500;
 	}
-
 	.truth-row.truth-active .truth-count {
 		color: var(--accent);
 		font-weight: 500;
 	}
-
 	.truth-row.truth-passive {
 		opacity: 0.45;
-	}
-
-	.truth-count {
-		color: var(--ink);
-		font-variant-numeric: tabular-nums;
 	}
 
 	.evidence:hover {
@@ -833,41 +1090,276 @@
 	}
 
 	.ev-expanded {
-		margin-top: 0.5rem;
-		padding: 0.5rem 0.6rem;
+		margin-top: 0.6rem;
+		padding: 0.6rem 0.8rem;
 		background: rgba(0, 0, 0, 0.02);
 		border-left: 2px solid var(--rule);
 		font-family: var(--mono);
+		font-size: 0.78rem;
+	}
+
+	/* Each expanded section: rationale, LLM calls, pipeline steps, debug */
+	.exp-block {
+		margin-bottom: 0.9rem;
+	}
+	.exp-block:last-child {
+		margin-bottom: 0;
+	}
+	.exp-h {
+		font-family: var(--mono);
 		font-size: 0.74rem;
-	}
-
-	.exp-row {
-		margin: 0.2rem 0;
-		display: flex;
-		gap: 0.6rem;
-		align-items: baseline;
-	}
-
-	.exp-label {
 		color: var(--ink-muted);
-		min-width: 8ch;
-		font-size: 0.7rem;
 		text-transform: lowercase;
+		letter-spacing: 0.04em;
+		margin: 0 0 0.4rem;
+		font-weight: 500;
 	}
-
-	.exp-val {
-		color: var(--ink);
+	.exp-h-count {
+		color: var(--ink-faint);
+		font-weight: 400;
+		margin-left: 0.2rem;
+	}
+	.exp-h-note {
+		display: block;
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.78rem;
+		color: var(--ink-faint);
+		text-transform: none;
+		letter-spacing: 0;
+		margin-top: 0.2rem;
+	}
+	.exp-rationale {
 		font-family: var(--serif);
 		font-size: 0.92rem;
+		color: var(--ink);
+		margin: 0;
+		line-height: 1.45;
 	}
-
-	.exp-error .exp-val {
+	.exp-empty {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.86rem;
+		color: var(--ink-muted);
+		margin: 0;
+	}
+	.exp-not-captured {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.78rem;
+		color: var(--ink-faint);
+		margin: 0.4rem 0 0;
+	}
+	.exp-error,
+	.exp-error-block .exp-error {
+		color: var(--accent);
+		font-family: var(--serif);
+		font-size: 0.9rem;
+		margin: 0;
+	}
+	.exp-error-inline {
 		color: var(--accent);
 	}
 
-	.exp-val.mono {
+	/* Tables inside the expansion (LLM calls + pipeline steps) */
+	.trace-table {
+		width: 100%;
+		border-collapse: collapse;
 		font-family: var(--mono);
 		font-size: 0.78rem;
+	}
+	.trace-table th {
+		text-align: left;
+		font-weight: 500;
+		color: var(--ink-muted);
+		font-size: 0.7rem;
+		padding: 0.2rem 0.6rem 0.2rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.trace-table td {
+		padding: 0.25rem 0.6rem 0.25rem 0;
+		vertical-align: baseline;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.trace-table .num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.step-output {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		align-items: baseline;
+	}
+	.step-answer { color: var(--ink); font-weight: 500; }
+	.step-rationale { color: var(--ink-muted); font-family: var(--serif); font-style: italic; font-size: 0.86rem; flex-basis: 100%; }
+	.step-span { color: var(--ink-muted); font-style: italic; }
+	.step-source-tag {
+		font-family: var(--mono);
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0 0.3rem;
+	}
+	.step-source-substrate { color: var(--accent); }
+	.step-source-llm { color: var(--ok-green); }
+
+	/* LLM call expandable rows */
+	.call-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+		font-family: var(--mono);
+		font-size: 0.78rem;
+	}
+	.call-row {
+		display: grid;
+		grid-template-columns: 1.5rem minmax(0, 1fr) minmax(0, 1.2fr) 4ch 7ch 6ch minmax(0, 1.4fr);
+		gap: 0.6rem;
+		align-items: baseline;
+		padding: 0.3rem 0.4rem;
+		border-bottom: 1px dotted var(--rule);
+		cursor: pointer;
+		font-variant-numeric: tabular-nums;
+	}
+	.call-row:hover {
+		background: var(--accent-wash);
+	}
+	.call-row-open {
+		background: var(--accent-wash);
+	}
+	.call-row-error {
+		color: var(--accent);
+	}
+	.call-chev {
+		color: var(--ink-faint);
+	}
+	.call-kind {
+		color: var(--ink);
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.call-model {
+		font-size: 0.7rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.call-duration, .call-tokens, .call-finish {
+		color: var(--ink);
+		font-size: 0.74rem;
+	}
+	.call-flags {
+		font-size: 0.7rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.exp-not-captured-inline {
+		font-style: italic;
+		color: var(--ink-faint);
+	}
+
+	.call-detail {
+		padding: 0.6rem 0.8rem;
+		margin-bottom: 0.4rem;
+		border-left: 2px solid var(--accent);
+		background: rgba(0, 0, 0, 0.015);
+	}
+	.call-detail-block {
+		margin-bottom: 0.8rem;
+	}
+	.call-detail-block:last-child {
+		margin-bottom: 0;
+	}
+	.call-detail-h {
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-muted);
+		text-transform: lowercase;
+		letter-spacing: 0.04em;
+		margin: 0 0 0.3rem;
+		font-weight: 500;
+	}
+	.call-detail-pre {
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		background: var(--paper);
+		border: 1px solid var(--rule);
+		padding: 0.5rem 0.7rem;
+		margin: 0;
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 320px;
+		overflow-y: auto;
+		line-height: 1.45;
+		color: var(--ink);
+	}
+	.call-detail-error {
+		color: var(--accent);
+	}
+	.call-detail-reasoning {
+		font-style: italic;
+		color: var(--ink-muted);
+	}
+	.call-detail-content {
+		color: var(--ink);
+	}
+	.call-msg {
+		margin-bottom: 0.4rem;
+	}
+	.call-msg-role {
+		display: inline-block;
+		font-family: var(--mono);
+		font-size: 0.66rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--ink-muted);
+		margin-bottom: 0.15rem;
+	}
+	.call-detail-msg {
+		margin-top: 0.1rem;
+	}
+
+	/* Developer detail block — collapsed by default behind a checkbox */
+	.exp-debug-toggle {
+		display: inline-flex;
+		gap: 0.4rem;
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-muted);
+		cursor: pointer;
+	}
+	.exp-debug-block,
+	.exp-debug-row {
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		color: var(--ink-faint);
+	}
+	.exp-debug-block {
+		padding: 0.4rem 0 0;
+		display: flex;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+		align-items: baseline;
+	}
+	.exp-debug-cell {
+		padding-left: 0;
+	}
+	.exp-debug-cell .exp-debug-label {
+		margin-left: 1rem;
+	}
+	.exp-debug-cell .exp-debug-label:first-child {
+		margin-left: 0;
+	}
+	.exp-debug-label {
+		color: var(--ink-faint);
+		text-transform: lowercase;
 	}
 
 	.hash-copy {
@@ -888,70 +1380,6 @@
 		color: var(--ink-faint);
 	}
 
-	.step-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		font-family: var(--mono);
-		font-size: 0.72rem;
-	}
-
-	.step-item {
-		display: flex;
-		gap: 0.5rem;
-		align-items: baseline;
-		flex-wrap: wrap;
-	}
-
-	.step-kind {
-		color: var(--ink);
-		font-weight: 500;
-		min-width: 16ch;
-	}
-
-	.step-source {
-		color: var(--accent);
-		font-size: 0.66rem;
-		text-transform: uppercase;
-	}
-
-	.step-answer {
-		color: var(--ink);
-	}
-
-	.step-span {
-		color: var(--ink-muted);
-		font-style: italic;
-	}
-
-	.call-log {
-		font-family: var(--mono);
-		font-size: 0.72rem;
-		border-collapse: collapse;
-		flex: 1;
-	}
-
-	.call-log th {
-		text-align: left;
-		font-weight: 500;
-		color: var(--ink-muted);
-		font-size: 0.66rem;
-		padding-right: 1rem;
-		border-bottom: 1px dotted var(--rule);
-	}
-
-	.call-log td {
-		padding: 0.1rem 1rem 0.1rem 0;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.call-log .num {
-		text-align: right;
-	}
-
-	.absent-mark {
-		font-style: italic;
-	}
 
 	/* Agent cards */
 	.agent {

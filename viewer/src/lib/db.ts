@@ -471,10 +471,12 @@ export interface ScorerStepRow {
 	model_id: string | null;
 	step_kind: string;
 	is_substrate_answered: boolean | null;
+	input_payload_json: string | null;
 	output_json: string;
 	latency_ms: number | null;
 	prompt_tokens: number | null;
 	out_tokens: number | null;
+	finish_reason: string | null;
 	error: string | null;
 }
 
@@ -631,6 +633,177 @@ export async function getRunNarrative(run_id: string): Promise<RunNarrative | nu
 			verdicts_moved_to_correct: moved_to_correct,
 			verdicts_moved_to_incorrect: moved_to_incorrect,
 			verdict_crossings: crossings
+		};
+	} finally {
+		con.disconnectSync?.();
+	}
+}
+
+export interface ProbeCoverageRow {
+	probe: ProbeKind;
+	total: number;
+	substrate_n: number;
+	llm_n: number;
+	abstain_n: number;
+	notrun_n: number;
+}
+
+export interface HeuristicCoverage {
+	run_id: string;
+	n_evidences: number;
+	per_probe: ProbeCoverageRow[];
+	/** % of evidences where every invoked probe was substrate-answered. */
+	all_substrate_rate: number;
+	/** % of evidences where at least one probe didn't run (short-circuit). */
+	short_circuited_rate: number;
+	/** Mean count of probes that fired (substrate + LLM, not "not run") per evidence. */
+	mean_invoked_probes: number;
+}
+
+/**
+ * Per-probe substrate/LLM/abstain coverage for a single run.
+ *
+ * Reads two sources and unions:
+ *   1. substrate_route rows expose per-probe slot results.
+ *   2. Individual {probe}_probe rows are written when substrate answers
+ *      OR when LLM fires its own probe step.
+ *
+ * Coverage = the "final" source per (evidence, probe), with substrate-route's
+ * slot taking precedence (it's authoritative for what substrate decided).
+ * Missing data on both sides means "probe did not run for this evidence" —
+ * counted in `notrun_n`, not silently dropped.
+ */
+export async function getHeuristicCoverage(run_id: string): Promise<HeuristicCoverage | null> {
+	if (!dbExists()) return null;
+	const con = await connect();
+	try {
+		const qr = run_id.replace(/'/g, "''");
+		const probes: ProbeKind[] = ['subject_role', 'object_role', 'relation_axis', 'scope'];
+		const slotUnions = probes
+			.map(
+				(p) => `
+				SELECT evidence_hash, '${p}' AS probe,
+				       json_extract_string(output_json, '$.${p}.source') AS substrate_source,
+				       json_extract_string(output_json, '$.${p}.answer') AS substrate_answer
+				FROM scorer_step
+				WHERE run_id='${qr}' AND step_kind='substrate_route'`
+			)
+			.join(' UNION ALL ');
+		const sql = `
+			WITH substrate_slots AS (${slotUnions}),
+			individual_probes AS (
+				SELECT evidence_hash,
+				       replace(step_kind, '_probe', '') AS probe,
+				       json_extract_string(output_json, '$.source') AS llm_source,
+				       json_extract_string(output_json, '$.answer') AS llm_answer
+				FROM scorer_step
+				WHERE run_id='${qr}'
+				  AND step_kind IN ('subject_role_probe','object_role_probe','relation_axis_probe','scope_probe')
+			),
+			joined AS (
+				SELECT s.evidence_hash, s.probe,
+				       CASE
+				         WHEN s.substrate_source = 'substrate' THEN 'substrate'
+				         WHEN ip.llm_source = 'llm' THEN 'llm'
+				         WHEN ip.llm_source = 'abstain' OR ip.llm_answer = 'abstain' THEN 'abstain'
+				         WHEN ip.llm_source IS NOT NULL THEN ip.llm_source
+				         ELSE NULL
+				       END AS final_source
+				FROM substrate_slots s
+				LEFT JOIN individual_probes ip
+				  ON ip.evidence_hash = s.evidence_hash AND ip.probe = s.probe
+			),
+			per_evidence AS (
+				SELECT evidence_hash,
+				       SUM(CASE WHEN final_source = 'substrate' THEN 1 ELSE 0 END) AS substrate_count,
+				       SUM(CASE WHEN final_source = 'llm' THEN 1 ELSE 0 END) AS llm_count,
+				       SUM(CASE WHEN final_source = 'abstain' THEN 1 ELSE 0 END) AS abstain_count,
+				       SUM(CASE WHEN final_source IS NULL THEN 1 ELSE 0 END) AS notrun_count
+				FROM joined
+				GROUP BY evidence_hash
+			)
+			SELECT
+				probe,
+				COUNT(*) AS total,
+				SUM(CASE WHEN final_source='substrate' THEN 1 ELSE 0 END) AS substrate_n,
+				SUM(CASE WHEN final_source='llm' THEN 1 ELSE 0 END) AS llm_n,
+				SUM(CASE WHEN final_source='abstain' THEN 1 ELSE 0 END) AS abstain_n,
+				SUM(CASE WHEN final_source IS NULL THEN 1 ELSE 0 END) AS notrun_n
+			FROM joined
+			GROUP BY probe
+			ORDER BY probe`;
+		const perProbeRaw = await rows<{
+			probe: string;
+			total: number;
+			substrate_n: number;
+			llm_n: number;
+			abstain_n: number;
+			notrun_n: number;
+		}>(con, sql);
+		const per_probe: ProbeCoverageRow[] = perProbeRaw.map((r) => ({
+			probe: r.probe as ProbeKind,
+			total: r.total,
+			substrate_n: r.substrate_n,
+			llm_n: r.llm_n,
+			abstain_n: r.abstain_n,
+			notrun_n: r.notrun_n
+		}));
+
+		const aggRows = await rows<{
+			n_evidences: number;
+			all_substrate: number;
+			short_circuited: number;
+			mean_invoked: number;
+		}>(
+			con,
+			`WITH substrate_slots AS (${slotUnions}),
+			individual_probes AS (
+				SELECT evidence_hash,
+				       replace(step_kind, '_probe', '') AS probe,
+				       json_extract_string(output_json, '$.source') AS llm_source,
+				       json_extract_string(output_json, '$.answer') AS llm_answer
+				FROM scorer_step
+				WHERE run_id='${qr}'
+				  AND step_kind IN ('subject_role_probe','object_role_probe','relation_axis_probe','scope_probe')
+			),
+			joined AS (
+				SELECT s.evidence_hash, s.probe,
+				       CASE
+				         WHEN s.substrate_source = 'substrate' THEN 'substrate'
+				         WHEN ip.llm_source = 'llm' THEN 'llm'
+				         WHEN ip.llm_source = 'abstain' OR ip.llm_answer = 'abstain' THEN 'abstain'
+				         WHEN ip.llm_source IS NOT NULL THEN ip.llm_source
+				         ELSE NULL
+				       END AS final_source
+				FROM substrate_slots s
+				LEFT JOIN individual_probes ip
+				  ON ip.evidence_hash = s.evidence_hash AND ip.probe = s.probe
+			),
+			per_evidence AS (
+				SELECT evidence_hash,
+				       SUM(CASE WHEN final_source='substrate' THEN 1 ELSE 0 END) AS substrate_count,
+				       SUM(CASE WHEN final_source='llm' THEN 1 ELSE 0 END) AS llm_count,
+				       SUM(CASE WHEN final_source IS NULL THEN 1 ELSE 0 END) AS notrun_count
+				FROM joined
+				GROUP BY evidence_hash
+			)
+			SELECT
+				COUNT(*) AS n_evidences,
+				SUM(CASE WHEN notrun_count=0 AND llm_count=0 THEN 1 ELSE 0 END) AS all_substrate,
+				SUM(CASE WHEN notrun_count > 0 THEN 1 ELSE 0 END) AS short_circuited,
+				AVG(substrate_count + llm_count) AS mean_invoked
+			FROM per_evidence`
+		);
+
+		const agg = aggRows[0] ?? { n_evidences: 0, all_substrate: 0, short_circuited: 0, mean_invoked: 0 };
+		const n_evidences = agg.n_evidences;
+		return {
+			run_id,
+			n_evidences,
+			per_probe,
+			all_substrate_rate: n_evidences > 0 ? agg.all_substrate / n_evidences : 0,
+			short_circuited_rate: n_evidences > 0 ? agg.short_circuited / n_evidences : 0,
+			mean_invoked_probes: agg.mean_invoked ?? 0
 		};
 	} finally {
 		con.disconnectSync?.();
@@ -1069,10 +1242,15 @@ export async function getFocusStatement(
 			getProbeAttribution(resolvedRun, resolvedHash)
 		]);
 
-		const whyText =
-			whyKind === 'biggest_delta' && biggestDelta != null
-				? `largest |Δ vs INDRA| in this run (Δ ${biggestDelta >= 0 ? '+' : '−'}${Math.abs(biggestDelta).toFixed(2)}, n_ev=${s.n_evidences})`
-				: `requested via deep-link · n_ev=${s.n_evidences}`;
+		const evPlural = s.n_evidences === 1 ? '' : 's';
+		const evText = `${s.n_evidences} evidence${evPlural}`;
+		// `why_this_one` only renders when the system chose the focus editorially
+		// (largest |Δ|). When the user deep-linked to a stmt_hash, the URL
+		// already explains why they're here — silencing avoids self-evident
+		// bookkeeping ("opened via deep-link").
+		const whyText = whyKind === 'biggest_delta'
+			? `the largest disagreement with INDRA in this run · ${evText}`
+			: '';
 
 		return {
 			run_id: resolvedRun,
@@ -1274,8 +1452,9 @@ export async function getStatementDetail(stmt_hash: string): Promise<StatementDe
 				con,
 				`SELECT step_hash, evidence_hash, scorer_version, model_id,
 				        step_kind, is_substrate_answered,
+				        input_payload_json::VARCHAR AS input_payload_json,
 				        output_json::VARCHAR AS output_json,
-				        latency_ms, prompt_tokens, out_tokens, error
+				        latency_ms, prompt_tokens, out_tokens, finish_reason, error
 				 FROM scorer_step
 				 WHERE stmt_hash = '${stmt_hash.replace(/'/g, "''")}'
 				 ORDER BY scorer_version DESC, evidence_hash, step_kind`

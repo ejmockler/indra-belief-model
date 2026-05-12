@@ -338,6 +338,15 @@ class ModelClient:
                         "prompt_tokens": response.prompt_tokens,
                         "out_tokens": response.tokens,
                         "finish_reason": response.finish_reason,
+                        # Layer B capture — persist raw LLM I/O for tracing.
+                        # Lets the viewer reconstruct what the model saw and
+                        # what it said. Cost: ~1-10KB per call (typical) up
+                        # to 30+KB when reasoning_content runs hot.
+                        "system": system,
+                        "messages": messages,
+                        "model_id": self.config.get("model_id"),
+                        "content": response.content,
+                        "reasoning": response.reasoning,
                     })
                     return response
                 except Exception as e:
@@ -444,12 +453,28 @@ class ModelClient:
             messages=messages,
             temperature=temp,
         )
-        content = response.content[0].text
+        # Anthropic returns a list of content blocks. Extract:
+        #   - `text` block → goes into `content`
+        #   - `thinking` block (extended-thinking) → goes into `reasoning`
+        # Tool-use blocks intentionally ignored — we don't use native tools
+        # (see module docstring). Iterating preserves capture under future
+        # API additions where order matters.
+        content_parts: list[str] = []
+        thinking_parts: list[str] = []
+        for block in response.content:
+            block_type = getattr(block, "type", None)
+            if block_type == "text":
+                content_parts.append(getattr(block, "text", "") or "")
+            elif block_type == "thinking":
+                thinking_parts.append(getattr(block, "thinking", "") or "")
+        content = "".join(content_parts)
+        reasoning = "\n".join(thinking_parts) if thinking_parts else ""
+        raw_text = (reasoning + "\n" + content) if reasoning else content
         return ModelResponse(
             content=content,
-            reasoning="",
+            reasoning=reasoning,
             tokens=response.usage.output_tokens,
-            raw_text=content,
+            raw_text=raw_text,
             finish_reason=response.stop_reason or "stop",
             prompt_tokens=getattr(response.usage, "input_tokens", -1),
         )
