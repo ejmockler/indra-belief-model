@@ -74,9 +74,19 @@
 		}
 		const cur = actionState(path);
 		if (cur.phase === 'running') {
+			const done = cur.n_done ?? 0;
+			const total = cur.n_total;
+			// Honest about partial state: the worker writes statements one
+			// at a time; SIGTERM/SIGKILL leaves whatever it had committed
+			// in the corpus. Re-ingest is idempotent on stmt_hash so a
+			// retry resumes cleanly — but the user needs to know the rows
+			// aren't gone just because they hit cancel.
+			const tail = done > 0
+				? ` — those ${done.toLocaleString()} statements are committed in corpus.duckdb (idempotent re-ingest will resume)`
+				: '';
 			setAction(path, {
 				phase: 'error',
-				message: `canceled by user after ${cur.n_done ?? 0}${cur.n_total ? '/' + cur.n_total : ''} statements`
+				message: `canceled at ${done.toLocaleString()}${total ? '/' + total.toLocaleString() : ''}${tail}`
 			});
 		}
 	}
