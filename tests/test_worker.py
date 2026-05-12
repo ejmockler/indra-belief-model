@@ -387,6 +387,7 @@ def test_register_truth_set_writes_truth_labels(
     events = _parse_events(capsys.readouterr().out)
     done = _find_event(events, "done")
     assert done["n_loaded"] == 3
+    assert done["n_unique_targets"] == 3
     assert done["n_missing_target"] == 0
     assert done["n_missing_field"] == 0
 
@@ -402,6 +403,51 @@ def test_register_truth_set_writes_truth_labels(
             assert target_kind == "evidence"
             assert field == "tag"
             assert value_text in {"correct", "negative_result"}
+    finally:
+        con.close()
+
+
+def test_register_truth_set_distinct_targets_separate_from_n_loaded(
+    tmp_db: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """When two JSONL rows share a source_hash (a real condition in
+    eval_set_v4 — 2/100 rows collapse), the DB ends up with FEWER labels
+    than the worker's loop counter. The done event must surface both so
+    the dashboard can render '100 → 98 (2 duplicates collapsed)' instead
+    of falsely claiming 100."""
+    records = [
+        {"matches_hash": "1", "source_hash": "100", "tag": "correct"},
+        {"matches_hash": "2", "source_hash": "200", "tag": "incorrect"},
+        # Same source_hash as record 1 → collapses on natural key
+        {"matches_hash": "3", "source_hash": "100", "tag": "correct"},
+    ]
+    path = tmp_path / "dup.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    args = argparse.Namespace(
+        db=tmp_db,
+        path=str(path),
+        truth_set_id="test_dup",
+        truth_set_name="dup",
+        target_kind="evidence",
+        field="tag",
+        target_hash_field=None,
+        recompute_latest_validity=False,
+    )
+    assert W.do_register_truth_set(args) == 0
+    events = _parse_events(capsys.readouterr().out)
+    done = _find_event(events, "done")
+    assert done["n_loaded"] == 3
+    assert done["n_unique_targets"] == 2
+
+    con = duckdb.connect(tmp_db, read_only=True)
+    try:
+        n = con.execute(
+            "SELECT COUNT(*) FROM truth_label WHERE truth_set_id='test_dup'"
+        ).fetchone()[0]
+        # DB count tracks n_unique_targets (natural-key idempotency), not
+        # n_loaded. If this assertion ever fires it means the worker is
+        # over-reporting and the dashboard would lie to the user.
+        assert n == done["n_unique_targets"]
     finally:
         con.close()
 

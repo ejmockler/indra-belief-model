@@ -231,6 +231,11 @@ def do_register_truth_set(args: argparse.Namespace) -> int:
         n_missing_target = 0
         n_missing_field = 0
         skipped_examples: list[str] = []
+        # Track distinct target_ids so we can honestly report "100 rows
+        # processed → 98 unique labels" when two rows share a source_hash
+        # (a real condition in eval_set_v4 — 2/100 rows collapse on the
+        # natural key, so the DB count differs from the worker's loop count).
+        distinct_targets: set[str] = set()
 
         with open(args.path) as fh:
             for line in fh:
@@ -285,6 +290,7 @@ def do_register_truth_set(args: argparse.Namespace) -> int:
                      args.field, str(value), args.path],
                 )
                 n_loaded += 1
+                distinct_targets.add(target_id)
                 if n_loaded % 200 == 0:
                     emit({
                         "event": "progress",
@@ -323,6 +329,7 @@ def do_register_truth_set(args: argparse.Namespace) -> int:
         emit({
             "event": "done",
             "n_loaded": n_loaded,
+            "n_unique_targets": len(distinct_targets),
             "n_missing_target": n_missing_target,
             "n_missing_field": n_missing_field,
             "n_skipped": n_skipped,

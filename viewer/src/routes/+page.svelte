@@ -102,11 +102,14 @@
 				setAction(d.path, { phase: 'error', message: body?.stderr?.slice?.(0, 200) ?? 'register failed' });
 				return;
 			}
-			const sum = body?.summary as { n_loaded?: number; n_missing_target?: number; duration_s?: number } | null;
+			const sum = body?.summary as { n_loaded?: number; n_unique_targets?: number; n_missing_target?: number; duration_s?: number } | null;
+			const collapsed = sum?.n_loaded != null && sum.n_unique_targets != null && sum.n_unique_targets < sum.n_loaded
+				? ` (${sum.n_loaded - sum.n_unique_targets} duplicate target_ids collapsed)`
+				: '';
 			setAction(d.path, {
 				phase: 'done',
 				message: sum
-					? `registered as truth_set_id=${truth_set_id} · ${sum.n_loaded ?? '?'} labels · ${sum.n_missing_target ?? 0} missing target · ${sum.duration_s ?? '?'}s`
+					? `registered as truth_set_id=${truth_set_id} · ${sum.n_unique_targets ?? sum.n_loaded ?? '?'} labels${collapsed} · ${sum.n_missing_target ?? 0} missing target · ${sum.duration_s ?? '?'}s`
 					: 'registered'
 			});
 			await invalidateAll();
