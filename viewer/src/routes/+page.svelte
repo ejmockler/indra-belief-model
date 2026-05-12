@@ -533,7 +533,8 @@ con.close()`;
 			{/if}
 		</p>
 
-		<section class="focus">
+		<section class="focus" aria-label="focus statement — biggest disagreement with INDRA in the latest run">
+			<h2 class="visually-hidden">focus statement — biggest disagreement with INDRA in the latest run</h2>
 			{#if focus}
 				<BeliefPrimitive
 					stmt={focus.stmt}
@@ -557,6 +558,7 @@ con.close()`;
 		{#if findings}
 			{@const focusHash = focus?.stmt.stmt_hash ?? null}
 			<section class="findings" aria-label="other notable statements from this run">
+				<h2 class="visually-hidden">findings — other notable statements from this run</h2>
 				{#each FINDING_LANES as lane}
 					{@const allRows = (findings[lane.key] as import('$lib/db').FindingRow[]) ?? []}
 					{@const rows = allRows.filter((r) => r.stmt_hash !== focusHash)}
@@ -746,7 +748,7 @@ con.close()`;
 											{#if pre.phase === 'idle'}
 												<button class="ds-action" onclick={() => estimateCost(d)}>preview scoring cost →</button>
 											{:else if pre.phase === 'estimating'}
-												<span class="ds-action ds-action-running">estimating…</span>
+												<span class="ds-action ds-action-running" role="status" aria-live="polite">estimating…</span>
 											{:else if pre.phase === 'estimated'}
 												<div class="ds-cost-panel">
 													<p class="ds-cost-intro">
@@ -861,7 +863,7 @@ con.close()`;
 											</span>
 											<button class="ds-action ds-action-cancel" onclick={() => cancelIngest(d.path)}>cancel →</button>
 										{:else if st.phase === 'running'}
-											<span class="ds-action ds-action-running">registering…</span>
+											<span class="ds-action ds-action-running" role="status" aria-live="polite">registering…</span>
 										{:else if st.phase === 'done'}
 											<span class="ds-action ds-action-done">✓ {st.message}</span>
 										{:else if st.phase === 'error'}
