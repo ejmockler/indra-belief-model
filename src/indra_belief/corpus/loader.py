@@ -19,7 +19,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator, Iterable
+from typing import TYPE_CHECKING, Callable, Iterator, Iterable
 
 if TYPE_CHECKING:
     import duckdb
@@ -115,6 +115,7 @@ def ingest_statements(
     *,
     source_dump_id: str | None = None,
     register_indra_truth: bool = True,
+    on_progress: Callable[[int], None] | None = None,
 ) -> dict[str, int]:
     """Write a stream of INDRA Statements to the corpus DuckDB.
 
@@ -126,6 +127,10 @@ def ingest_statements(
 
     `register_indra_truth=True` (default) auto-emits `truth_label` rows under
     truth_sets `indra_published_belief` and `indra_epistemics`.
+
+    `on_progress` is called with the running n_statements counter after each
+    statement commits. The U7.1 SSE ingest endpoint uses this to emit live
+    progress on a long-running 3GB benchmark-corpus ingest.
     """
     counters = {"n_statements": 0, "n_evidences": 0, "n_agents": 0,
                 "n_edges": 0, "n_truth_labels": 0}
@@ -297,6 +302,9 @@ def ingest_statements(
                 [stmt_hash, from_uuid, source_dump_id],
             )
             counters["n_edges"] += 1
+
+        if on_progress is not None:
+            on_progress(counters["n_statements"])
 
     # Resolve supports_edge UUIDs → stmt_hashes. INDRA's Statement.to_json()
     # writes UUIDs (Statement.uuid) into supports/supported_by, NOT

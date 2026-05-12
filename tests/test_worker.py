@@ -261,6 +261,67 @@ def test_ingest_is_idempotent(
         con.close()
 
 
+def test_ingest_emits_progress_events(
+    tmp_db: str, tiny_indra_json: str, capsys: pytest.CaptureFixture[str]
+):
+    """The U7.1 SSE flow relies on `progress` events: do_ingest must wire an
+    on_progress callback into ingest_statements that emits at least one event
+    when n_statements % 100 == 0 (or, on a tiny corpus, at least a `loaded`
+    that the dashboard renders as a denominator while waiting for progress).
+
+    With only 3 stmts we don't hit a progress threshold (first ping is at 100),
+    so this test asserts the *loaded* event carries the total — which the
+    dashboard uses as the denominator before any progress arrives.
+    """
+    args = argparse.Namespace(
+        db=tmp_db, path=tiny_indra_json, source_dump_id="test_progress"
+    )
+    assert W.do_ingest(args) == 0
+    events = _parse_events(capsys.readouterr().out)
+    loaded = _find_event(events, "loaded")
+    assert loaded["n_statements"] == 3
+
+
+def test_ingest_progress_threshold_fires_at_100(
+    tmp_db: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """Build a 100-stmt synthetic corpus and verify the first progress event
+    actually fires. Without this we'd silently drop progress wiring and never
+    notice — the small-corpus tests above can't catch that."""
+    stmts_json = []
+    for i in range(100):
+        # Distinct subj/obj pairs so stmt_hashes don't collide.
+        a = f"AGENT{i:03d}A"
+        b = f"AGENT{i:03d}B"
+        stmts_json.append(
+            Phosphorylation(
+                Agent(a, db_refs={"HGNC": f"{i:04d}"}),
+                Agent(b, db_refs={"HGNC": f"{(i + 1):04d}"}),
+                evidence=[Evidence(
+                    source_api="reach",
+                    text=f"{a} phosphorylates {b}.",
+                    pmid=str(10000 + i),
+                )],
+            )
+        )
+    path = tmp_path / "hundred.json"
+    path.write_text(json.dumps([s.to_json() for s in stmts_json]))
+
+    args = argparse.Namespace(
+        db=tmp_db, path=str(path), source_dump_id="test_thresh"
+    )
+    assert W.do_ingest(args) == 0
+    events = _parse_events(capsys.readouterr().out)
+    progress_events = [e for e in events if e.get("event") == "progress"]
+    assert len(progress_events) >= 1, (
+        f"expected at least one progress event; saw events: "
+        f"{[e.get('event') for e in events]}"
+    )
+    last = progress_events[-1]
+    assert last["n_statements_done"] == 100
+    assert last["n_statements_total"] == 100
+
+
 def test_ingest_from_gzipped_json(
     tmp_db: str, tiny_indra_json_gz: str, capsys: pytest.CaptureFixture[str]
 ):

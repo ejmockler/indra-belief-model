@@ -32,10 +32,31 @@
 			.toLowerCase();
 	}
 
-	// Per-card action state: { phase: 'idle'|'confirming'|'running'|'done'|'error', message? }
+	// Per-card action state. `n_done`/`n_total` carry live progress for ingest;
+	// `t_started` powers the elapsed-time readout. All optional — register and
+	// other lightweight verbs use only phase + message.
 	type ActionPhase = 'idle' | 'confirming' | 'running' | 'done' | 'error';
-	type ActionState = { phase: ActionPhase; message?: string };
+	type ActionState = {
+		phase: ActionPhase;
+		message?: string;
+		n_done?: number;
+		n_total?: number | null;
+		t_started?: number;
+	};
 	let actionStates: Record<string, ActionState> = $state({});
+	// AbortControllers for in-flight ingest streams, indexed by dataset path.
+	const ingestControllers = new Map<string, AbortController>();
+
+	// Wall-clock tick for elapsed-time displays. Only advances while at
+	// least one ingest is running so the dashboard isn't doing 1Hz work
+	// when nothing's in flight.
+	let tickNow = $state(Date.now());
+	$effect(() => {
+		const anyRunning = Object.values(actionStates).some((s) => s.phase === 'running');
+		if (!anyRunning) return;
+		const h = setInterval(() => { tickNow = Date.now(); }, 1000);
+		return () => clearInterval(h);
+	});
 
 	function setAction(path: string, state: ActionState) {
 		actionStates = { ...actionStates, [path]: state };
@@ -43,6 +64,21 @@
 
 	function actionState(path: string): ActionState {
 		return actionStates[path] ?? { phase: 'idle' };
+	}
+
+	function cancelIngest(path: string) {
+		const ctrl = ingestControllers.get(path);
+		if (ctrl) {
+			ctrl.abort();
+			ingestControllers.delete(path);
+		}
+		const cur = actionState(path);
+		if (cur.phase === 'running') {
+			setAction(path, {
+				phase: 'error',
+				message: `canceled by user after ${cur.n_done ?? 0}${cur.n_total ? '/' + cur.n_total : ''} statements`
+			});
+		}
 	}
 
 	async function registerAsTruthSet(d: { path: string; filename: string }) {
@@ -244,28 +280,90 @@
 
 	async function ingestCorpus(d: { path: string; filename: string }) {
 		const source_dump_id = slugFromPath(d.path);
-		setAction(d.path, { phase: 'running' });
+		setAction(d.path, {
+			phase: 'running',
+			n_done: 0,
+			n_total: null,
+			t_started: Date.now()
+		});
+		const ctrl = new AbortController();
+		ingestControllers.set(d.path, ctrl);
 		try {
 			const res = await fetch('/api/datasets/ingest', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ path: d.path, source_dump_id })
+				body: JSON.stringify({ path: d.path, source_dump_id }),
+				signal: ctrl.signal
 			});
-			const body = await res.json();
-			if (!res.ok) {
-				setAction(d.path, { phase: 'error', message: body?.stderr?.slice?.(0, 200) ?? 'ingest failed' });
+			if (!res.ok || !res.body) {
+				const body = await res.text();
+				setAction(d.path, { phase: 'error', message: body.slice(0, 300) });
 				return;
 			}
-			const sum = body?.summary as { n_statements?: number; duration_s?: number } | null;
-			setAction(d.path, {
-				phase: 'done',
-				message: sum
-					? `ingested ${sum.n_statements ?? '?'} statements as source_dump_id=${source_dump_id} · ${sum.duration_s ?? '?'}s`
-					: 'ingested'
-			});
-			await invalidateAll();
+			// SSE: server emits `data: <json>\n\n` per event.
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buf = '';
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) break;
+				buf += decoder.decode(value, { stream: true });
+				let nl: number;
+				while ((nl = buf.indexOf('\n\n')) >= 0) {
+					const block = buf.slice(0, nl);
+					buf = buf.slice(nl + 2);
+					const dataLine = block.split('\n').find((l) => l.startsWith('data: '));
+					if (!dataLine) continue;
+					let ev: Record<string, unknown>;
+					try {
+						ev = JSON.parse(dataLine.slice(6));
+					} catch {
+						continue;
+					}
+					const t = ev.event as string;
+					const cur = actionState(d.path);
+					if (t === 'loaded') {
+						if (cur.phase === 'running') {
+							setAction(d.path, {
+								...cur,
+								n_total: typeof ev.n_statements === 'number' ? ev.n_statements : null
+							});
+						}
+					} else if (t === 'progress') {
+						if (cur.phase === 'running') {
+							setAction(d.path, {
+								...cur,
+								n_done: Number(ev.n_statements_done),
+								n_total: typeof ev.n_statements_total === 'number' ? ev.n_statements_total : cur.n_total
+							});
+						}
+					} else if (t === 'done') {
+						const n = typeof ev.n_statements === 'number' ? ev.n_statements : null;
+						const dur = typeof ev.duration_s === 'number' ? ev.duration_s : null;
+						setAction(d.path, {
+							phase: 'done',
+							message: n != null
+								? `ingested ${n.toLocaleString()} statements as source_dump_id=${source_dump_id}${dur != null ? ` · ${dur.toFixed(1)}s` : ''}`
+								: 'ingested'
+						});
+						await invalidateAll();
+					} else if (t === 'error') {
+						setAction(d.path, {
+							phase: 'error',
+							message: String(ev.stderr ?? ev.error ?? 'ingest failed').slice(0, 400)
+						});
+					}
+				}
+			}
 		} catch (err) {
-			setAction(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+			const cur = actionState(d.path);
+			if ((err as Error).name === 'AbortError' && cur.phase === 'error') {
+				// cancelIngest() already set the message
+			} else {
+				setAction(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+			}
+		} finally {
+			ingestControllers.delete(d.path);
 		}
 	}
 
@@ -600,7 +698,16 @@ con.close()`;
 										{:else if canIngestGz && st.phase === 'idle'}
 											<button class="ds-action ds-action-heavy" onclick={() => ingestCorpus(d)} title="streams gunzip, json.loads in-memory, writes statements to corpus.duckdb. May take minutes and use 5–10× the compressed size in RAM.">ingest from .gz (decompresses in-memory) →</button>
 										{:else if st.phase === 'running'}
-											<span class="ds-action ds-action-running">ingesting…</span>
+											<span class="ds-action ds-action-running">
+												{#if st.n_total != null && st.n_total > 0 && st.n_done != null}
+													ingested {st.n_done.toLocaleString()} / {st.n_total.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
+												{:else if st.n_done != null && st.n_done > 0}
+													ingested {st.n_done.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
+												{:else}
+													decompressing / parsing… {st.t_started ? Math.round((tickNow - st.t_started) / 1000) + 's' : ''}
+												{/if}
+											</span>
+											<button class="ds-action ds-action-cancel" onclick={() => cancelIngest(d.path)}>cancel →</button>
 										{:else if st.phase === 'done'}
 											<span class="ds-action ds-action-done">✓ {st.message}</span>
 										{:else if st.phase === 'error'}
@@ -725,8 +832,19 @@ con.close()`;
 											<button class="ds-action" onclick={() => registerAsTruthSet(d)} title="reads `tag` field on each record; registers as evidence-level truth_set; reruns validity for the latest scored run">register `tag` as truth_set →</button>
 										{:else if canIngestGzB && st.phase === 'idle'}
 											<button class="ds-action ds-action-heavy" onclick={() => ingestCorpus(d)} title="streams gunzip, json.loads in-memory, writes statements to corpus.duckdb. May take minutes and use 5–10× the compressed size in RAM.">ingest from .gz (decompresses in-memory) →</button>
+										{:else if st.phase === 'running' && canIngestGzB}
+											<span class="ds-action ds-action-running">
+												{#if st.n_total != null && st.n_total > 0 && st.n_done != null}
+													ingested {st.n_done.toLocaleString()} / {st.n_total.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
+												{:else if st.n_done != null && st.n_done > 0}
+													ingested {st.n_done.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
+												{:else}
+													decompressing / parsing… {st.t_started ? Math.round((tickNow - st.t_started) / 1000) + 's' : ''}
+												{/if}
+											</span>
+											<button class="ds-action ds-action-cancel" onclick={() => cancelIngest(d.path)}>cancel →</button>
 										{:else if st.phase === 'running'}
-											<span class="ds-action ds-action-running">{canIngestGzB ? 'ingesting…' : 'registering…'}</span>
+											<span class="ds-action ds-action-running">registering…</span>
 										{:else if st.phase === 'done'}
 											<span class="ds-action ds-action-done">✓ {st.message}</span>
 										{:else if st.phase === 'error'}

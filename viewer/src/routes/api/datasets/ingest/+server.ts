@@ -1,22 +1,32 @@
 /**
- * POST /api/datasets/ingest — ingest an INDRA Statement JSON into corpus.duckdb.
+ * POST /api/datasets/ingest — ingest an INDRA Statement JSON (or .json.gz)
+ * into corpus.duckdb.
  *
- * Spawns `python -m indra_belief.worker ingest ...` (the same subprocess
- * channel U3.1 decided on). Currently synchronous — reads the worker's
- * stdout to completion, returns final event as JSON. SSE streaming is a
- * U3.3 follow-up.
+ * U7.1: was synchronous (drain stdout, return JSON) — broke down on the
+ * 460MB benchmark .gz where parse + DB-write takes minutes with no signal
+ * to the user. Now streams SSE the same way /api/runs/score does, with
+ * AbortController-driven SIGTERM/SIGKILL so closing the tab kills the
+ * worker.
  *
  * Body:
  *   {
- *     path: string,            // absolute path to JSON (from the datasets surface)
+ *     path: string,            // absolute path to JSON or .json.gz
  *     source_dump_id: string   // e.g. "rasmachine_2026-05-11"
  *   }
+ *
+ * Returns: SSE stream. Events:
+ *   data: {"event": "started", ...}
+ *   data: {"event": "loaded", "n_statements": N}
+ *   data: {"event": "progress", "n_statements_done": N, "n_statements_total": M}
+ *   data: {"event": "done", "n_statements": N, "duration_s": ...}
+ *   data: {"event": "error", ...}
+ * Terminated by `data: {"event": "channel_closed"}`.
  */
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { dbPath } from '$lib/db';
-import { error, json } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 const SOURCE_DUMP_RE = /^[a-z][a-z0-9_-]{1,63}$/i;
@@ -33,7 +43,8 @@ function repoRoot(): string {
 	return resolve(dbPath(), '..', '..');
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async (event) => {
+	const request = event.request;
 	const body = (await request.json()) as Record<string, unknown>;
 	const path = body.path as string | undefined;
 	const source_dump_id = body.source_dump_id as string | undefined;
@@ -51,45 +62,80 @@ export const POST: RequestHandler = async ({ request }) => {
 		'--source-dump-id', source_dump_id
 	];
 	const py = pythonBin();
-	const events: Array<Record<string, unknown>> = [];
-	let stderrBuf = '';
 
-	const exitCode: number = await new Promise((resolveP) => {
-		const child = spawn(py, args, {
-			cwd: repoRoot(),
-			env: { ...process.env, PYTHONPATH: resolve(repoRoot(), 'src') }
-		});
-		let stdoutBuf = '';
-		child.stdout.on('data', (chunk: Buffer) => {
-			stdoutBuf += chunk.toString('utf-8');
-			let nl: number;
-			while ((nl = stdoutBuf.indexOf('\n')) >= 0) {
-				const line = stdoutBuf.slice(0, nl).trim();
-				stdoutBuf = stdoutBuf.slice(nl + 1);
-				if (!line) continue;
+	const stream = new ReadableStream<Uint8Array>({
+		start(controller) {
+			const encoder = new TextEncoder();
+			const writeEvent = (obj: unknown) => {
+				controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+			};
+
+			const child = spawn(py, args, {
+				cwd: repoRoot(),
+				env: { ...process.env, PYTHONPATH: resolve(repoRoot(), 'src') }
+			});
+
+			const onAbort = () => {
 				try {
-					events.push(JSON.parse(line));
+					if (!child.killed) {
+						child.kill('SIGTERM');
+						setTimeout(() => {
+							if (!child.killed) child.kill('SIGKILL');
+						}, 2000);
+					}
 				} catch {
-					events.push({ event: 'stdout_raw', line });
+					/* already dead */
 				}
-			}
-		});
-		child.stderr.on('data', (chunk: Buffer) => {
-			stderrBuf += chunk.toString('utf-8');
-		});
-		child.on('exit', (code) => resolveP(code ?? -1));
-		child.on('error', (err) => {
-			stderrBuf += `\nspawn error: ${err.message}`;
-			resolveP(-1);
-		});
+				writeEvent({ event: 'canceled', reason: 'client_disconnected' });
+				try { controller.close(); } catch { /* already closed */ }
+			};
+			event.request.signal.addEventListener('abort', onAbort);
+
+			let stdoutBuf = '';
+			let stderrBuf = '';
+
+			child.stdout.on('data', (chunk: Buffer) => {
+				stdoutBuf += chunk.toString('utf-8');
+				let nl: number;
+				while ((nl = stdoutBuf.indexOf('\n')) >= 0) {
+					const line = stdoutBuf.slice(0, nl).trim();
+					stdoutBuf = stdoutBuf.slice(nl + 1);
+					if (!line) continue;
+					try {
+						writeEvent(JSON.parse(line));
+					} catch {
+						writeEvent({ event: 'stdout_raw', line });
+					}
+				}
+			});
+			child.stderr.on('data', (chunk: Buffer) => {
+				stderrBuf += chunk.toString('utf-8');
+			});
+			child.on('exit', (code, signal) => {
+				event.request.signal.removeEventListener('abort', onAbort);
+				if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGKILL') {
+					writeEvent({
+						event: 'error',
+						exit_code: code,
+						signal,
+						stderr: stderrBuf.slice(0, 4096)
+					});
+				}
+				writeEvent({ event: 'channel_closed', exit_code: code ?? -1, signal });
+				try { controller.close(); } catch { /* already closed */ }
+			});
+			child.on('error', (err) => {
+				writeEvent({ event: 'spawn_error', error: err.message });
+				controller.close();
+			});
+		}
 	});
 
-	if (exitCode !== 0) {
-		return json(
-			{ ok: false, exit_code: exitCode, events, stderr: stderrBuf.slice(0, 4096) },
-			{ status: 500 }
-		);
-	}
-	const done = events.find((e) => e.event === 'done') ?? null;
-	return json({ ok: true, events, summary: done });
+	return new Response(stream, {
+		headers: {
+			'content-type': 'text/event-stream',
+			'cache-control': 'no-cache, no-transform',
+			'x-accel-buffering': 'no'
+		}
+	});
 };

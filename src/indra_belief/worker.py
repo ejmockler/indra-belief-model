@@ -58,11 +58,37 @@ def do_ingest(args: argparse.Namespace) -> int:
     try:
         apply_schema(con)
         stmts = _load_stmts_from_any(args.path)
-        emit({"event": "loaded", "n_statements": len(stmts)})
-        ingest_statements(con, stmts, source_dump_id=args.source_dump_id)
+        n_total = len(stmts)
+        emit({"event": "loaded", "n_statements": n_total})
+
+        # Emit progress every 100 stmts for the first 1k, then every 500,
+        # then every 2500 — keeps SSE legible across 3GB-corpus ingests
+        # without spamming on small ones.
+        def _on_progress(n: int) -> None:
+            if n <= 1000 and n % 100 == 0:
+                step = True
+            elif n <= 10_000 and n % 500 == 0:
+                step = True
+            elif n % 2500 == 0:
+                step = True
+            else:
+                step = False
+            if step:
+                emit({
+                    "event": "progress",
+                    "n_statements_done": n,
+                    "n_statements_total": n_total,
+                })
+
+        ingest_statements(
+            con,
+            stmts,
+            source_dump_id=args.source_dump_id,
+            on_progress=_on_progress,
+        )
         emit({
             "event": "done",
-            "n_statements": len(stmts),
+            "n_statements": n_total,
             "duration_s": round(time.time() - t0, 2),
         })
         return 0
