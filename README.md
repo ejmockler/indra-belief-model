@@ -222,7 +222,11 @@ benchmark used to pick them.
 
 For corpora larger than a single Statement (e.g. an INDRA-native JSON dump
 from rasmachine), `indra_belief.corpus` persists ingest, scoring, and
-validity to a DuckDB file; the `viewer/` SvelteKit app browses it.
+validity to a DuckDB file; the `viewer/` SvelteKit app both browses and
+drives it (via per-card `[ingest]` / `[score]` / `[register truth_set]`
+actions that spawn the `indra_belief.worker` subprocess and stream SSE
+progress). The Python entry points below remain canonical — the viewer
+calls them under the hood.
 
 ```python
 import duckdb
@@ -254,11 +258,13 @@ returns LLM-call counts and projected USD per model. Truth-set support
 `register_truth_set` + `load_truth_labels` light up the dashboard's
 P/R/F1-vs-gold panel automatically.
 
-Browse via the viewer (must be stopped while writing — DuckDB locks):
+Browse + drive via the viewer:
 
 ```bash
 cd viewer && npm install && npm run dev  # http://127.0.0.1:5173
 ```
+
+The dashboard discovers files in `data/corpora/` and `data/benchmark/` and exposes per-card actions: `[ingest]`, `[register tag as truth_set]`, cost preflight, and `[score]` against the loaded LLM. Long ingests / scores stream SSE progress with a `[cancel]` button; the closeInstance coordination in `viewer/src/lib/db.ts` releases the cached DuckDB instance before each spawn so the worker can acquire the file lock. Dashboard reads issued during an active write fail closed with HTTP 503 + a "writer in progress" page (`+error.svelte`).
 
 ### Benchmark evaluation against a holdout file
 
@@ -287,9 +293,8 @@ src/indra_belief/
   model_client.py          # Model transport (OpenAI-compat + Anthropic)
   noise_model.py           # INDRA SimpleScorer (parametric belief from source priors)
   composed_scorer.py       # LLM verdict → hard gate over the parametric noise model
-  scorers/
-    scorer.py              # The scorer — native INDRA, adaptive bank, voting
-    _prompts.py            # System prompt, contrastive examples, verdict parser
+  worker.py                # Viewer-spawned worker: ingest / estimate-cost / score / register-truth-set
+  scorers/                 # 9-step probe orchestrator (parse → context → 4 probes → grounding → adjudicate)
   corpus/                  # Corpus persistence + scoring orchestration (DuckDB)
     schema.py              # 10-table schema (statement / evidence / agent / truth_set / metric / …)
     loader.py              # from_indra_json + ingest_statements + register_truth_set
@@ -302,15 +307,27 @@ src/indra_belief/
     scoring_record.py      # ScoringRecord: wraps INDRA Statement + Evidence
     corpus.py              # CorpusIndex: source_hash → Statement lookup
     example_bank.json      # Type-specific contrastive pairs
-  tools/
-    gilda_tools.py         # Entity lookup helper (pre-computed, injected into prompt)
 
-viewer/                    # SvelteKit dashboard over the corpus DuckDB
+viewer/                    # SvelteKit dashboard — browses + drives the corpus DuckDB
+  src/lib/
+    db.ts                  # DuckDB connection + closeInstance() for writer coordination
+    datasets.ts            # Filesystem discovery of data/corpora + data/benchmark
+    pathGuard.ts           # Path-arg validation (must resolve under <repoRoot>/data/)
+    format.ts              # Cue extraction, verdict rendering, sentence formatting
+    probeAttribution.ts    # Probe-source attribution model (substrate vs LLM)
+    residuals.ts           # Residual histogram bucket logic
+    components/            # BeliefPrimitive, HeuristicCoverage, Validity
   src/routes/
-    +page.svelte           # Corpus overview + validity panel + cost projection
+    +page.svelte           # Dashboard: focus + findings + validity + datasets + runs feed
+    +error.svelte          # 503 writer-in-progress fallback + generic 4xx/5xx page
+    runs/[run_id]/+page.svelte             # Per-run detail with compare-against dropdown
     statements/+page.svelte                # Matrix (paginated, URL-stated)
     statements/[stmt_hash]/+page.svelte    # Per-stmt deep-dive (9-step rail, evidence cards, truth panel)
     export/[run_id]/[kind]/+server.ts      # Belief + model-card download endpoints
+    api/datasets/ingest/+server.ts         # SSE-streaming ingest (handles .json + .json.gz)
+    api/truth-sets/+server.ts              # Truth-set registration + validity recompute
+    api/runs/estimate-cost/+server.ts      # Per-model cost preflight
+    api/runs/score/+server.ts              # SSE-streaming score with AbortController kill
 
 data/
   benchmark/
