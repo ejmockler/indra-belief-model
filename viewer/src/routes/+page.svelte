@@ -704,7 +704,7 @@ con.close()`;
 												{:else if st.n_done != null && st.n_done > 0}
 													ingested {st.n_done.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
 												{:else}
-													decompressing / parsing… {st.t_started ? Math.round((tickNow - st.t_started) / 1000) + 's' : ''}
+													parsing {fmtBytes(d.size_bytes)}{d.ext === 'json.gz' ? ' (.gz · 5–10× in RAM)' : ''}… {st.t_started ? Math.round((tickNow - st.t_started) / 1000) + 's' : ''}
 												{/if}
 											</span>
 											<button class="ds-action ds-action-cancel" onclick={() => cancelIngest(d.path)}>cancel →</button>
@@ -839,7 +839,7 @@ con.close()`;
 												{:else if st.n_done != null && st.n_done > 0}
 													ingested {st.n_done.toLocaleString()} stmts · {Math.round((tickNow - (st.t_started ?? tickNow)) / 1000)}s
 												{:else}
-													decompressing / parsing… {st.t_started ? Math.round((tickNow - st.t_started) / 1000) + 's' : ''}
+													parsing {fmtBytes(d.size_bytes)}{d.ext === 'json.gz' ? ' (.gz · 5–10× in RAM)' : ''}… {st.t_started ? Math.round((tickNow - st.t_started) / 1000) + 's' : ''}
 												{/if}
 											</span>
 											<button class="ds-action ds-action-cancel" onclick={() => cancelIngest(d.path)}>cancel →</button>

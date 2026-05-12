@@ -115,6 +115,10 @@ export const POST: RequestHandler = async (event) => {
 
 			let stdoutBuf = '';
 			let stderrBuf = '';
+			// Bound stderr accumulation — score runs can last an hour on a
+			// large corpus; an unfiltered Python warning loop would otherwise
+			// grow stderrBuf unbounded.
+			const STDERR_CAP = 64 * 1024;
 
 			child.stdout.on('data', (chunk: Buffer) => {
 				stdoutBuf += chunk.toString('utf-8');
@@ -131,7 +135,11 @@ export const POST: RequestHandler = async (event) => {
 				}
 			});
 			child.stderr.on('data', (chunk: Buffer) => {
+				if (stderrBuf.length >= STDERR_CAP) return;
 				stderrBuf += chunk.toString('utf-8');
+				if (stderrBuf.length > STDERR_CAP) {
+					stderrBuf = stderrBuf.slice(0, STDERR_CAP) + '\n…[stderr truncated]';
+				}
 			});
 			child.on('exit', (code, signal) => {
 				event.request.signal.removeEventListener('abort', onAbort);
