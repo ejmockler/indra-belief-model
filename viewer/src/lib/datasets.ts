@@ -9,6 +9,7 @@
  */
 import { readdirSync, statSync, existsSync, openSync, readSync, closeSync, readFileSync, createReadStream } from 'node:fs';
 import { resolve, basename, relative, join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { connect, dbExists, dbPath } from './db';
 
@@ -22,6 +23,12 @@ export interface DatasetDescriptor {
 	size_bytes: number;
 	file_mtime_iso: string;
 	ext: string;
+	/**
+	 * Other files in the discovery set that have the same (size, head-hash).
+	 * When non-empty, this descriptor shares content with the named files —
+	 * curator should pick one to act on, not register/ingest both.
+	 */
+	duplicate_of?: string[];
 }
 
 export interface DatasetShape {
@@ -206,12 +213,63 @@ function listDir(dir: string, kind: DatasetKind): DatasetDescriptor[] {
 	return out;
 }
 
+/**
+ * Cheap content fingerprint: size + sha256 of the first 16KB. Catches the
+ * common "same file under two names" case without reading multi-GB files.
+ * For files smaller than 16KB the head IS the entire file → fingerprints are
+ * exact. For larger files there's a theoretical collision if two large files
+ * share size and head — extremely rare in practice for tagged JSONL.
+ */
+const FINGERPRINT_HEAD_BYTES = 16 * 1024;
+function fingerprint(path: string, size: number): string {
+	const fd = openSync(path, 'r');
+	try {
+		const buf = Buffer.alloc(Math.min(size, FINGERPRINT_HEAD_BYTES));
+		readSync(fd, buf, 0, buf.length, 0);
+		const hash = createHash('sha256');
+		hash.update(`size:${size}\n`);
+		hash.update(buf);
+		return hash.digest('hex').slice(0, 16);
+	} finally {
+		closeSync(fd);
+	}
+}
+
 export function getDatasets(): DatasetDescriptor[] {
 	const root = repoRoot();
-	return [
+	const all = [
 		...listDir(join(root, 'data', 'corpora'), 'corpus'),
 		...listDir(join(root, 'data', 'benchmark'), 'benchmark')
 	];
+
+	// Group by content fingerprint; mark all but the alphabetically-first
+	// as duplicates of the canonical. Failures to fingerprint (permission
+	// errors etc.) leave the descriptor untouched.
+	const byFingerprint = new Map<string, DatasetDescriptor[]>();
+	for (const d of all) {
+		let fp: string;
+		try {
+			fp = fingerprint(d.path, d.size_bytes);
+		} catch {
+			continue;
+		}
+		if (!byFingerprint.has(fp)) byFingerprint.set(fp, []);
+		byFingerprint.get(fp)!.push(d);
+	}
+	for (const group of byFingerprint.values()) {
+		if (group.length < 2) continue;
+		group.sort((a, b) => a.filename.localeCompare(b.filename));
+		const canonical = group[0];
+		for (let i = 1; i < group.length; i++) {
+			const other = group[i];
+			other.duplicate_of = [...(other.duplicate_of ?? []), canonical.filename];
+			// Symmetry: name the dups on the canonical too so a curator
+			// inspecting it sees its aliases.
+			canonical.duplicate_of = [...(canonical.duplicate_of ?? []), other.filename];
+		}
+	}
+
+	return all;
 }
 
 /**

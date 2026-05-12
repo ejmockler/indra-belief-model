@@ -579,6 +579,9 @@ con.close()`;
 												<span>sources: {d.shape.source_apis.join(', ')}</span>
 											{/if}
 										</span>
+										{#if d.duplicate_of && d.duplicate_of.length > 0}
+											<span class="ds-badge ds-badge-dup" title={`byte-identical to ${d.duplicate_of.join(', ')} (same size + same first 16KB)`}>duplicate of {d.duplicate_of.join(', ')}</span>
+										{/if}
 										{#if d.ingest}
 											{@const ing = d.ingest}
 											{#if ing.n_in_file === 0}
@@ -701,6 +704,9 @@ con.close()`;
 												<span>sources: {d.shape.source_apis.join(', ')}</span>
 											{/if}
 										</span>
+										{#if d.duplicate_of && d.duplicate_of.length > 0}
+											<span class="ds-badge ds-badge-dup" title={`byte-identical to ${d.duplicate_of.join(', ')} (same size + same first 16KB)`}>duplicate of {d.duplicate_of.join(', ')}</span>
+										{/if}
 										{#if d.ingest && d.ingest.n_in_file > 0}
 											{@const ing = d.ingest}
 											{#if ing.n_already_ingested === 0}
@@ -1176,6 +1182,13 @@ con.close()`;
 	.ds-badge-partial { color: var(--accent); }
 	.ds-badge-done { color: var(--ok-green); }
 	.ds-badge-unknown { color: var(--ink-faint); }
+	.ds-badge-dup {
+		color: var(--ink-muted);
+		font-style: italic;
+		text-transform: none;
+		letter-spacing: 0;
+		font-family: var(--serif);
+	}
 
 	.ds-action {
 		font-family: var(--mono);
