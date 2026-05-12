@@ -534,7 +534,6 @@ con.close()`;
 		</p>
 
 		<section class="focus" aria-label="focus statement — biggest disagreement with INDRA in the latest run">
-			<h2 class="visually-hidden">focus statement — biggest disagreement with INDRA in the latest run</h2>
 			{#if focus}
 				<BeliefPrimitive
 					stmt={focus.stmt}
@@ -544,6 +543,7 @@ con.close()`;
 					evidences={focus.evidences}
 					why_this_one={focus.why_this_one}
 					mode="full"
+					level="h2"
 				/>
 				<p class="focus-deeplink">
 					<a href={`/statements/${focus.stmt.stmt_hash}`}>open deep-dive →</a>

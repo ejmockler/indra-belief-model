@@ -300,6 +300,7 @@
 			probes={probes}
 			evidences={[]}
 			mode="full"
+			level="h1"
 		/>
 		<div class="stmt-meta">
 			{#if ourBelief != null}

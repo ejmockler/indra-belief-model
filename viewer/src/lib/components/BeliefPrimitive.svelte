@@ -30,6 +30,15 @@
 		mode?: 'full' | 'compact';
 		/** When true, the card is clickable and behaves as <a href={href}>. */
 		href?: string;
+		/**
+		 * Heading level for the biology sentence in full mode. Defaults to
+		 * 'h3' (legacy). Call sites should set this based on context:
+		 * - 'h1' on /statements/[hash] (the page is *about* the statement)
+		 * - 'h2' for a focus card on a dashboard that owns the page-level h1
+		 * - 'h3' inside a nested section with its own h2 ancestor
+		 * Compact mode never emits a heading (renders `<span>`).
+		 */
+		level?: 'h1' | 'h2' | 'h3';
 	}
 
 	let {
@@ -40,8 +49,16 @@
 		evidences = [],
 		why_this_one,
 		mode = 'full',
-		href
+		href,
+		level = 'h3'
 	}: BeliefPrimitiveProps = $props();
+
+	// Sub-heading (b-cause-h: "Why we doubt" / "How we read it" / "Evidence")
+	// tracks one level deeper than the main b-sentence so the document doesn't
+	// skip levels (e.g. h1 → h4 on the deep-dive page).
+	const subLevel = $derived(
+		level === 'h1' ? 'h2' : level === 'h2' ? 'h3' : 'h4'
+	);
 
 	const sentence = $derived(sentenceFromStatement(stmt.indra_type, stmt.agents));
 	const delta = $derived(
@@ -230,7 +247,7 @@
 	{/if}
 {:else}
 	<article class="b-card b-card-full">
-		<h3 class="b-sentence b-sentence-full">{sentence}</h3>
+		<svelte:element this={level} class="b-sentence b-sentence-full">{sentence}</svelte:element>
 		<p class="b-verdict-line">{verdictLine}</p>
 		<div class="b-meta">
 			<span class="b-type">{stmt.indra_type}</span>
@@ -281,7 +298,7 @@
 
 		{#if invokedProbes.length > 0 || evidences.length > 0}
 			<div class="b-cause">
-				<h4 class="b-cause-h">{decisiveProbe ? 'Why we doubt' : invokedProbes.length > 0 ? 'How we read it' : 'Evidence'}</h4>
+				<svelte:element this={subLevel} class="b-cause-h">{decisiveProbe ? 'Why we doubt' : invokedProbes.length > 0 ? 'How we read it' : 'Evidence'}</svelte:element>
 				{#if invokedProbes.length > 0}
 					<p class="b-cause-legend">
 						probes produce categorical answers — the adjudicator combines them via a 7-bucket decision table, not by summing weights
