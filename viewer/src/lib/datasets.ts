@@ -75,8 +75,17 @@ function extractStmtHash(rec: Record<string, unknown>): string | null {
 	for (const c of candidates) {
 		if (c == null) continue;
 		if (typeof c === 'string') {
-			// Already 16-hex?
+			// Disambiguate decimal int vs. 16-char hex. A 16-digit
+			// stringified int (e.g. "1846153178643196") would match the
+			// hex regex by accident — check decimal FIRST so that wins.
+			if (/^-?\d+$/.test(c)) {
+				const h = intToStmtHash(c);
+				if (h) return h;
+				continue;
+			}
 			if (/^[a-f0-9]{16}$/i.test(c)) return c.toLowerCase();
+			// Otherwise, try as a hash anyway (e.g. UUID won't parse — falls
+			// through to the next candidate).
 			const h = intToStmtHash(c);
 			if (h) return h;
 		} else if (typeof c === 'number' || typeof c === 'bigint') {
