@@ -53,6 +53,102 @@ def do_ingest(args: argparse.Namespace) -> int:
         con.close()
 
 
+def do_estimate_cost(args: argparse.Namespace) -> int:
+    """Read a JSON of INDRA Statements, estimate cost per supported model."""
+    from indra.statements import stmts_from_json_file
+
+    from indra_belief.corpus.cost import MODEL_PRICES_PER_M_TOKENS, estimate_cost
+
+    emit({"event": "started", "verb": "estimate-cost", "path": args.path})
+    t0 = time.time()
+    stmts = stmts_from_json_file(args.path)
+    estimates: list[dict] = []
+    for model_id in MODEL_PRICES_PER_M_TOKENS.keys():
+        e = estimate_cost(stmts, model_id=model_id)
+        estimates.append({
+            "model_id": model_id,
+            "cost_usd": e["cost_usd"],
+            "n_stmts": e["n_stmts"],
+            "n_evidences_est": e["n_evidences_est"],
+            "n_llm_calls_est": e["n_llm_calls_est"],
+        })
+    emit({
+        "event": "done",
+        "n_statements": len(stmts),
+        "estimates": estimates,
+        "duration_s": round(time.time() - t0, 2),
+    })
+    return 0
+
+
+def do_score(args: argparse.Namespace) -> int:
+    """Ingest (idempotent) + score a corpus end-to-end. Emits per-evidence progress."""
+    import duckdb
+    from indra.statements import stmts_from_json_file
+
+    from indra_belief.corpus import (
+        apply_schema,
+        ingest_statements,
+        score_corpus,
+    )
+    from indra_belief.model_client import ModelClient
+
+    emit({
+        "event": "started",
+        "verb": "score",
+        "path": args.path,
+        "model": args.model,
+        "scorer_version": args.scorer_version,
+    })
+    t0 = time.time()
+    con = duckdb.connect(args.db)
+    try:
+        apply_schema(con)
+        stmts = stmts_from_json_file(args.path)
+        emit({"event": "loaded", "n_statements": len(stmts)})
+
+        # Idempotent ingest — safe to call even if the user already clicked
+        # [ingest] before. INSERT OR REPLACE on the natural key (stmt_hash).
+        ingest_statements(con, stmts, source_dump_id=args.source_dump_id)
+        emit({"event": "ingested"})
+
+        client = ModelClient(args.model)
+        evidences_done = [0]
+
+        def on_ev(stmt_hash: str, ev_hash: str, _result: dict) -> None:
+            evidences_done[0] += 1
+            n = evidences_done[0]
+            # Emit progress: every evidence for the first 5, every 5 thereafter,
+            # then every 25. Keeps the SSE stream legible.
+            if n <= 5 or (n <= 50 and n % 5 == 0) or n % 25 == 0:
+                emit({
+                    "event": "progress",
+                    "n_evidences_done": n,
+                    "latest_stmt_hash": stmt_hash,
+                })
+
+        run_id = score_corpus(
+            con,
+            stmts,
+            client=client,
+            scorer_version=args.scorer_version,
+            model_id_default=args.model,
+            decompose=True,
+            cost_threshold_usd=args.cost_threshold_usd,
+            on_evidence=on_ev,
+        )
+        emit({
+            "event": "done",
+            "run_id": run_id,
+            "n_statements": len(stmts),
+            "n_evidences_done": evidences_done[0],
+            "duration_s": round(time.time() - t0, 2),
+        })
+        return 0
+    finally:
+        con.close()
+
+
 def do_register_truth_set(args: argparse.Namespace) -> int:
     import duckdb
 
@@ -202,6 +298,18 @@ def main(argv: list[str] | None = None) -> int:
     p_ingest.add_argument("--path", required=True)
     p_ingest.add_argument("--source-dump-id", required=True)
 
+    p_est = sub.add_parser("estimate-cost")
+    p_est.add_argument("--path", required=True)
+
+    p_score = sub.add_parser("score")
+    p_score.add_argument("--db", required=True)
+    p_score.add_argument("--path", required=True)
+    p_score.add_argument("--source-dump-id", required=True)
+    p_score.add_argument("--model", required=True)
+    p_score.add_argument("--scorer-version", required=True)
+    p_score.add_argument("--cost-threshold-usd", type=float, default=None,
+                         help="abort if estimated cost exceeds this dollar cap")
+
     p_truth = sub.add_parser("register-truth-set")
     p_truth.add_argument("--db", required=True)
     p_truth.add_argument("--path", required=True)
@@ -223,6 +331,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "ingest":
         return do_ingest(args)
+    if args.cmd == "estimate-cost":
+        return do_estimate_cost(args)
+    if args.cmd == "score":
+        return do_score(args)
     if args.cmd == "register-truth-set":
         return do_register_truth_set(args)
 

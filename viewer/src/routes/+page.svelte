@@ -79,6 +79,134 @@
 		}
 	}
 
+	// Cost preflight + score state per dataset path
+	type CostEstimate = { model_id: string; cost_usd: number; n_stmts: number; n_evidences_est: number; n_llm_calls_est: number };
+	type PreflightState =
+		| { phase: 'idle' }
+		| { phase: 'estimating' }
+		| { phase: 'estimated'; estimates: CostEstimate[] }
+		| { phase: 'scoring'; model: string; n_evidences_done: number; n_evidences_total: number | null; latest_stmt: string | null; t_started: number }
+		| { phase: 'scored'; run_id: string; model: string; n_evidences: number; duration_s: number }
+		| { phase: 'error'; message: string };
+	let preflightStates: Record<string, PreflightState> = $state({});
+	function setPre(path: string, st: PreflightState) {
+		preflightStates = { ...preflightStates, [path]: st };
+	}
+	function preState(path: string): PreflightState {
+		return preflightStates[path] ?? { phase: 'idle' };
+	}
+
+	function fmtCost(c: number): string {
+		if (c < 0.01) return '<$0.01';
+		if (c < 1) return '$' + c.toFixed(2);
+		if (c < 100) return '$' + c.toFixed(2);
+		return '$' + c.toFixed(0);
+	}
+
+	async function estimateCost(d: { path: string }) {
+		setPre(d.path, { phase: 'estimating' });
+		try {
+			const res = await fetch('/api/runs/estimate-cost', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ path: d.path })
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				setPre(d.path, { phase: 'error', message: body?.stderr?.slice?.(0, 200) ?? 'estimate failed' });
+				return;
+			}
+			const estimates = (body?.summary?.estimates as CostEstimate[]) ?? [];
+			setPre(d.path, { phase: 'estimated', estimates });
+		} catch (err) {
+			setPre(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+		}
+	}
+
+	async function scoreCorpus(d: { path: string; filename: string }, model: string) {
+		const source_dump_id = slugFromPath(d.path);
+		const scorer_version = 'prod-v1';
+		setPre(d.path, {
+			phase: 'scoring',
+			model,
+			n_evidences_done: 0,
+			n_evidences_total: null,
+			latest_stmt: null,
+			t_started: Date.now()
+		});
+		try {
+			const res = await fetch('/api/runs/score', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					path: d.path,
+					source_dump_id,
+					model,
+					scorer_version
+				})
+			});
+			if (!res.ok || !res.body) {
+				const body = await res.text();
+				setPre(d.path, { phase: 'error', message: body.slice(0, 300) });
+				return;
+			}
+			// SSE-ish stream — server emits `data: <json>\n\n` per event
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buf = '';
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) break;
+				buf += decoder.decode(value, { stream: true });
+				let nl: number;
+				while ((nl = buf.indexOf('\n\n')) >= 0) {
+					const block = buf.slice(0, nl);
+					buf = buf.slice(nl + 2);
+					const dataLine = block.split('\n').find((l) => l.startsWith('data: '));
+					if (!dataLine) continue;
+					let ev: Record<string, unknown>;
+					try {
+						ev = JSON.parse(dataLine.slice(6));
+					} catch {
+						continue;
+					}
+					const t = ev.event as string;
+					if (t === 'loaded') {
+						const cur = preState(d.path);
+						if (cur.phase === 'scoring') {
+							setPre(d.path, { ...cur, n_evidences_total: Number(ev.n_statements) * 2 });
+						}
+					} else if (t === 'progress') {
+						const cur = preState(d.path);
+						if (cur.phase === 'scoring') {
+							setPre(d.path, {
+								...cur,
+								n_evidences_done: Number(ev.n_evidences_done),
+								latest_stmt: (ev.latest_stmt_hash as string) ?? null
+							});
+						}
+					} else if (t === 'done') {
+						setPre(d.path, {
+							phase: 'scored',
+							run_id: String(ev.run_id),
+							model,
+							n_evidences: Number(ev.n_evidences_done),
+							duration_s: Number(ev.duration_s)
+						});
+						await invalidateAll();
+					} else if (t === 'error') {
+						setPre(d.path, {
+							phase: 'error',
+							message: String(ev.stderr ?? ev.error ?? 'score failed').slice(0, 400)
+						});
+					}
+				}
+			}
+		} catch (err) {
+			setPre(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+		}
+	}
+
 	async function ingestCorpus(d: { path: string; filename: string }) {
 		const source_dump_id = slugFromPath(d.path);
 		setAction(d.path, { phase: 'running' });
@@ -402,6 +530,7 @@ con.close()`;
 						<ul class="ds-list">
 							{#each corpora as d}
 								{@const st = actionState(d.path)}
+								{@const pre = preState(d.path)}
 								{@const canIngest = d.shape.kind_detail === 'indra_json' && (d.ingest?.n_in_file ?? 0) > 0 && (d.ingest?.n_already_ingested ?? 0) < (d.ingest?.n_in_file ?? 0)}
 								<li class="ds-row">
 									<div class="ds-row-head">
@@ -446,6 +575,55 @@ con.close()`;
 									{/if}
 									{#if d.shape.notes.length > 0}
 										<p class="ds-notes">{d.shape.notes.join(' · ')}</p>
+									{/if}
+									{#if d.shape.kind_detail === 'indra_json'}
+										<div class="ds-preflight">
+											{#if pre.phase === 'idle'}
+												<button class="ds-action" onclick={() => estimateCost(d)}>preview scoring cost →</button>
+											{:else if pre.phase === 'estimating'}
+												<span class="ds-action ds-action-running">estimating…</span>
+											{:else if pre.phase === 'estimated'}
+												<div class="ds-cost-panel">
+													<p class="ds-cost-intro">
+														Projected cost to score this corpus (assumes ~5 LLM calls per evidence; substrate short-circuits typically reduce this 30–60%):
+													</p>
+													<table class="ds-cost-table">
+														<thead>
+															<tr><th>model</th><th class="num">cost</th><th class="num">calls</th><th></th></tr>
+														</thead>
+														<tbody>
+															{#each pre.estimates as e}
+																<tr>
+																	<td><code>{e.model_id}</code></td>
+																	<td class="num">{fmtCost(e.cost_usd)}</td>
+																	<td class="num">{e.n_llm_calls_est.toLocaleString()}</td>
+																	<td><button class="ds-action ds-action-confirm" onclick={() => scoreCorpus(d, e.model_id)} title="ingests + scores · cost is best-estimate · cancel by closing the tab">score with this →</button></td>
+																</tr>
+															{/each}
+														</tbody>
+													</table>
+													<p class="ds-cost-warn">
+														Scoring is destructive of API budget. Closing the browser tab does not stop the worker — wait for it to finish or kill the python process by hand.
+													</p>
+													<button class="ds-action ds-action-cancel" onclick={() => setPre(d.path, { phase: 'idle' })}>cancel</button>
+												</div>
+											{:else if pre.phase === 'scoring'}
+												<div class="ds-cost-panel ds-scoring">
+													<p class="ds-scoring-line">
+														<strong>scoring with {pre.model}</strong>
+														{#if pre.n_evidences_total}· {pre.n_evidences_done} / {pre.n_evidences_total} evidences{:else}· {pre.n_evidences_done} evidences scored{/if}
+														· elapsed {Math.round((Date.now() - pre.t_started) / 1000)}s
+														{#if pre.latest_stmt}<span class="muted">· latest stmt {pre.latest_stmt.slice(0, 8)}</span>{/if}
+													</p>
+													<p class="ds-cost-warn muted">stream connected; worker is running. closing this tab will not stop it.</p>
+												</div>
+											{:else if pre.phase === 'scored'}
+												<span class="ds-action ds-action-done">✓ scored as run {pre.run_id.slice(0, 8)} · {pre.n_evidences} evidences · {pre.duration_s.toFixed(1)}s</span>
+											{:else if pre.phase === 'error'}
+												<span class="ds-action ds-action-error" title={pre.message}>✗ {pre.message.slice(0, 100)}</span>
+												<button class="ds-action ds-action-cancel" onclick={() => setPre(d.path, { phase: 'idle' })}>reset</button>
+											{/if}
+										</div>
 									{/if}
 								</li>
 							{/each}
@@ -978,6 +1156,73 @@ con.close()`;
 		border: 1px solid var(--accent);
 		color: var(--accent);
 		cursor: help;
+	}
+	.ds-action-confirm {
+		font-weight: 500;
+	}
+	.ds-action-cancel {
+		border: 1px solid var(--ink-faint);
+		color: var(--ink-muted);
+	}
+
+	.ds-preflight {
+		margin-top: 0.6rem;
+	}
+	.ds-cost-panel {
+		margin-top: 0.4rem;
+		padding: 0.8rem 1rem;
+		border-left: 3px solid var(--accent);
+		background: var(--accent-wash);
+	}
+	.ds-cost-intro {
+		font-family: var(--serif);
+		font-size: 0.86rem;
+		color: var(--ink);
+		margin: 0 0 0.6rem;
+		line-height: 1.5;
+	}
+	.ds-cost-table {
+		width: 100%;
+		max-width: 520px;
+		border-collapse: collapse;
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		margin: 0.3rem 0;
+	}
+	.ds-cost-table th {
+		text-align: left;
+		font-weight: 500;
+		color: var(--ink-muted);
+		font-size: 0.7rem;
+		padding: 0.2rem 0.6rem 0.2rem 0;
+		border-bottom: 1px dotted var(--rule);
+	}
+	.ds-cost-table td {
+		padding: 0.3rem 0.6rem 0.3rem 0;
+		vertical-align: baseline;
+	}
+	.ds-cost-table td.num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.ds-cost-warn {
+		font-family: var(--serif);
+		font-style: italic;
+		font-size: 0.78rem;
+		color: var(--accent);
+		margin: 0.4rem 0 0.6rem;
+		line-height: 1.45;
+	}
+	.ds-cost-warn.muted { color: var(--ink-muted); }
+
+	.ds-scoring {
+		border-left-color: var(--ok-green);
+	}
+	.ds-scoring-line {
+		font-family: var(--serif);
+		font-size: 0.95rem;
+		color: var(--ink);
+		margin: 0 0 0.3rem;
 	}
 
 	.ds-notes {
