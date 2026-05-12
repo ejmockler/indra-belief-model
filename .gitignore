@@ -29,6 +29,8 @@ data/exports/
 # Brutalist / playwright pass artifacts
 *.png
 .playwright-mcp/
+snapshot.md
+*-snapshot.md
 
 # OS
 .DS_Store
