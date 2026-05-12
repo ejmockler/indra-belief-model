@@ -25,7 +25,7 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import { dbPath } from '$lib/db';
+import { closeInstance, dbPath } from '$lib/db';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -62,6 +62,10 @@ export const POST: RequestHandler = async (event) => {
 		'--source-dump-id', source_dump_id
 	];
 	const py = pythonBin();
+
+	// Release the viewer's cached READ_ONLY DuckDB instance so the Python
+	// writer can acquire the file lock. Next dashboard read will lazy-reopen.
+	closeInstance();
 
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {

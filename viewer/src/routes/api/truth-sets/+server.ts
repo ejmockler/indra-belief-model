@@ -20,7 +20,7 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import { dbPath } from '$lib/db';
+import { closeInstance, dbPath } from '$lib/db';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -74,6 +74,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const py = pythonBin();
 	const events: Array<Record<string, unknown>> = [];
 	let stderrBuf = '';
+
+	// Release the viewer's cached READ_ONLY DuckDB instance so the worker can
+	// acquire the file lock. Next dashboard read will lazy-reopen.
+	closeInstance();
 
 	const exitCode: number = await new Promise((resolveP) => {
 		const child = spawn(py, args, {

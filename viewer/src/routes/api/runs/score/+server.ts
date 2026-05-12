@@ -25,7 +25,7 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import { dbPath } from '$lib/db';
+import { closeInstance, dbPath } from '$lib/db';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -79,6 +79,10 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const py = pythonBin();
+
+	// Release the viewer's cached READ_ONLY DuckDB instance so the worker can
+	// acquire the file lock. Next dashboard read will lazy-reopen.
+	closeInstance();
 
 	// SSE stream. Each line of worker stdout is already JSON; we wrap as SSE events.
 	const stream = new ReadableStream<Uint8Array>({

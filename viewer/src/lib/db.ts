@@ -64,12 +64,34 @@ export async function connect(): Promise<DuckDBConnection> {
 		_instance = null;
 	}
 	if (!_instance) {
-		// READ_ONLY so the Python loader can hold the writer lock concurrently.
-		// DuckDB allows many concurrent readers + one writer.
+		// READ_ONLY mode. DuckDB's file-level lock is held at the *instance*
+		// level: a process holding any open instance (even READ_ONLY) blocks
+		// another process from opening the same file for writing. Endpoints
+		// that spawn a Python writer (ingest / score) MUST call
+		// closeInstance() before spawning so the worker can acquire its lock.
+		// The next connect() lazy-reopens. Dashboard reads issued while a
+		// writer holds the lock will fail until the writer exits — surface
+		// that explicitly rather than retrying silently.
 		_instance = await DuckDBInstance.create(path, { access_mode: 'READ_ONLY' });
 		_instanceMtimeMs = currentMtime;
 	}
 	return _instance.connect();
+}
+
+/**
+ * Release the cached READ_ONLY instance so a Python writer subprocess can
+ * acquire the file lock. Call before spawning ingest / score workers; the
+ * next `connect()` will lazily reopen. Cheap and idempotent.
+ */
+export function closeInstance(): void {
+	if (!_instance) return;
+	try {
+		(_instance as unknown as { closeSync?: () => void }).closeSync?.();
+	} catch {
+		// best-effort — instance may already be closed
+	}
+	_instance = null;
+	_instanceMtimeMs = 0;
 }
 
 export interface CorpusOverview {
