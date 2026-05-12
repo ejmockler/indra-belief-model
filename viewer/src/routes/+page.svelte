@@ -22,6 +22,90 @@
 		return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 	}
 
+	/** Slugify a filename into a valid truth_set_id / source_dump_id. */
+	function slugFromPath(path: string): string {
+		const base = path.split('/').pop() ?? path;
+		return base
+			.replace(/\.(jsonl|json|json\.gz|gz)$/i, '')
+			.replace(/[^A-Za-z0-9_-]+/g, '_')
+			.replace(/^_+|_+$/g, '')
+			.toLowerCase();
+	}
+
+	// Per-card action state: { phase: 'idle'|'confirming'|'running'|'done'|'error', message? }
+	type ActionPhase = 'idle' | 'confirming' | 'running' | 'done' | 'error';
+	type ActionState = { phase: ActionPhase; message?: string };
+	let actionStates: Record<string, ActionState> = $state({});
+
+	function setAction(path: string, state: ActionState) {
+		actionStates = { ...actionStates, [path]: state };
+	}
+
+	function actionState(path: string): ActionState {
+		return actionStates[path] ?? { phase: 'idle' };
+	}
+
+	async function registerAsTruthSet(d: { path: string; filename: string }) {
+		const truth_set_id = slugFromPath(d.path);
+		const truth_set_name = d.filename;
+		setAction(d.path, { phase: 'running' });
+		try {
+			const res = await fetch('/api/truth-sets', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					path: d.path,
+					truth_set_id,
+					truth_set_name,
+					target_kind: 'evidence',
+					field: 'tag'
+				})
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				setAction(d.path, { phase: 'error', message: body?.stderr?.slice?.(0, 200) ?? 'register failed' });
+				return;
+			}
+			const sum = body?.summary as { n_loaded?: number; n_missing_target?: number; duration_s?: number } | null;
+			setAction(d.path, {
+				phase: 'done',
+				message: sum
+					? `registered as truth_set_id=${truth_set_id} · ${sum.n_loaded ?? '?'} labels · ${sum.n_missing_target ?? 0} missing target · ${sum.duration_s ?? '?'}s`
+					: 'registered'
+			});
+			await invalidateAll();
+		} catch (err) {
+			setAction(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+		}
+	}
+
+	async function ingestCorpus(d: { path: string; filename: string }) {
+		const source_dump_id = slugFromPath(d.path);
+		setAction(d.path, { phase: 'running' });
+		try {
+			const res = await fetch('/api/datasets/ingest', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ path: d.path, source_dump_id })
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				setAction(d.path, { phase: 'error', message: body?.stderr?.slice?.(0, 200) ?? 'ingest failed' });
+				return;
+			}
+			const sum = body?.summary as { n_statements?: number; duration_s?: number } | null;
+			setAction(d.path, {
+				phase: 'done',
+				message: sum
+					? `ingested ${sum.n_statements ?? '?'} statements as source_dump_id=${source_dump_id} · ${sum.duration_s ?? '?'}s`
+					: 'ingested'
+			});
+			await invalidateAll();
+		} catch (err) {
+			setAction(d.path, { phase: 'error', message: String(err).slice(0, 200) });
+		}
+	}
+
 	function statusGlyph(status: string): string {
 		if (status === 'succeeded') return '✓';
 		if (status === 'running') return '↻';
@@ -317,6 +401,8 @@ con.close()`;
 					{:else}
 						<ul class="ds-list">
 							{#each corpora as d}
+								{@const st = actionState(d.path)}
+								{@const canIngest = d.shape.kind_detail === 'indra_json' && (d.ingest?.n_in_file ?? 0) > 0 && (d.ingest?.n_already_ingested ?? 0) < (d.ingest?.n_in_file ?? 0)}
 								<li class="ds-row">
 									<div class="ds-row-head">
 										<code class="ds-name">{d.filename}</code>
@@ -340,6 +426,15 @@ con.close()`;
 											{:else}
 												<span class="ds-badge ds-badge-partial">partial · {ing.n_already_ingested}/{ing.n_in_file} ingested</span>
 											{/if}
+										{/if}
+										{#if canIngest && st.phase === 'idle'}
+											<button class="ds-action" onclick={() => ingestCorpus(d)}>ingest into corpus.duckdb →</button>
+										{:else if st.phase === 'running'}
+											<span class="ds-action ds-action-running">ingesting…</span>
+										{:else if st.phase === 'done'}
+											<span class="ds-action ds-action-done">✓ {st.message}</span>
+										{:else if st.phase === 'error'}
+											<span class="ds-action ds-action-error" title={st.message}>✗ ingest failed</span>
 										{/if}
 									</div>
 									{#if d.shape.sample_lines.length > 0}
@@ -365,6 +460,8 @@ con.close()`;
 					{:else}
 						<ul class="ds-list">
 							{#each benchmarks as d}
+								{@const st = actionState(d.path)}
+								{@const canRegister = d.shape.kind_detail === 'jsonl_records' && (d.shape.n_records ?? 0) > 0}
 								<li class="ds-row">
 									<div class="ds-row-head">
 										<code class="ds-name">{d.filename}</code>
@@ -386,6 +483,15 @@ con.close()`;
 											{:else}
 												<span class="ds-badge ds-badge-partial">partial · {ing.n_already_ingested}/{ing.n_in_file} ingested</span>
 											{/if}
+										{/if}
+										{#if canRegister && st.phase === 'idle'}
+											<button class="ds-action" onclick={() => registerAsTruthSet(d)} title="reads `tag` field on each record; registers as evidence-level truth_set; reruns validity for the latest scored run">register `tag` as truth_set →</button>
+										{:else if st.phase === 'running'}
+											<span class="ds-action ds-action-running">registering…</span>
+										{:else if st.phase === 'done'}
+											<span class="ds-action ds-action-done">✓ {st.message}</span>
+										{:else if st.phase === 'error'}
+											<span class="ds-action ds-action-error" title={st.message}>✗ register failed</span>
 										{/if}
 									</div>
 									{#if d.shape.sample_lines.length > 0}
@@ -843,6 +949,36 @@ con.close()`;
 	.ds-badge-partial { color: var(--accent); }
 	.ds-badge-done { color: var(--ok-green); }
 	.ds-badge-unknown { color: var(--ink-faint); }
+
+	.ds-action {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		padding: 0.15rem 0.5rem;
+		border: 1px solid var(--accent);
+		background: transparent;
+		color: var(--accent);
+		cursor: pointer;
+		text-transform: lowercase;
+		letter-spacing: 0.02em;
+	}
+	.ds-action:hover {
+		background: var(--accent-wash);
+	}
+	.ds-action-running {
+		border: 1px dashed var(--ink-muted);
+		color: var(--ink-muted);
+		cursor: progress;
+	}
+	.ds-action-done {
+		border: 1px solid var(--ok-green);
+		color: var(--ok-green);
+		cursor: default;
+	}
+	.ds-action-error {
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		cursor: help;
+	}
 
 	.ds-notes {
 		font-family: var(--mono);
