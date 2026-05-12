@@ -97,6 +97,19 @@ export const POST: RequestHandler = async (event) => {
 				env: { ...process.env, PYTHONPATH: resolve(repoRoot(), 'src') }
 			});
 
+			// Idempotent terminal cleanup. Both child.on('exit') and
+			// child.on('error') route here so the abort listener and stream
+			// controller are released exactly once, regardless of which
+			// terminal event the child fires (or whether one fires at all
+			// because of a synchronous spawn failure).
+			let terminated = false;
+			const cleanup = () => {
+				if (terminated) return;
+				terminated = true;
+				event.request.signal.removeEventListener('abort', onAbort);
+				try { controller.close(); } catch { /* already closed */ }
+			};
+
 			// U5.5: if the client disconnects (closed tab, browser-side
 			// AbortController.abort()), kill the worker so we don't keep
 			// spending API budget on a run nobody is watching. SIGTERM first
@@ -113,7 +126,7 @@ export const POST: RequestHandler = async (event) => {
 					// already dead — fine
 				}
 				writeEvent({ event: 'canceled', reason: 'client_disconnected' });
-				try { controller.close(); } catch { /* already closed */ }
+				cleanup();
 			};
 			event.request.signal.addEventListener('abort', onAbort);
 
@@ -146,7 +159,6 @@ export const POST: RequestHandler = async (event) => {
 				}
 			});
 			child.on('exit', (code, signal) => {
-				event.request.signal.removeEventListener('abort', onAbort);
 				if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGKILL') {
 					writeEvent({
 						event: 'error',
@@ -156,11 +168,11 @@ export const POST: RequestHandler = async (event) => {
 					});
 				}
 				writeEvent({ event: 'channel_closed', exit_code: code ?? -1, signal });
-				try { controller.close(); } catch { /* already closed */ }
+				cleanup();
 			});
 			child.on('error', (err) => {
 				writeEvent({ event: 'spawn_error', error: err.message });
-				controller.close();
+				cleanup();
 			});
 		}
 	});
